@@ -14,7 +14,15 @@ func main() {
 		port = "8080"
 	}
 
-	application := app.New()
+	application, err := app.New()
+	if err != nil {
+		log.Fatalf("startup error: %v", err)
+	}
+	defer func() {
+		if err := application.Close(); err != nil {
+			log.Printf("shutdown error: %v", err)
+		}
+	}()
 
 	server := &http.Server{
 		Addr:    ":" + port,
