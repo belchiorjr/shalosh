@@ -10,3 +10,101 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
     restart: unless-stopped
+  admin_backend:
+    build:
+      context: ./admin_backend
+      dockerfile: Dockerfile
+    image: shalosh-admin-backend:latest
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-shalosh}
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      LOCALSTACK_REGION: ${LOCALSTACK_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${LOCALSTACK_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${LOCALSTACK_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${LOCALSTACK_REGION:-us-east-1}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      JWT_ISSUER: ${JWT_ISSUER:-shalosh}
+    depends_on:
+      - postgres
+      - localstack
+    restart: unless-stopped
+  client_backend:
+    build:
+      context: ./client_backend
+      dockerfile: Dockerfile
+    image: shalosh-client-backend:latest
+    ports:
+      - "8081:8080"
+    environment:
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-shalosh}
+      LOCALSTACK_ENDPOINT: http://localstack:4566
+      LOCALSTACK_REGION: ${LOCALSTACK_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${LOCALSTACK_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${LOCALSTACK_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${LOCALSTACK_REGION:-us-east-1}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      JWT_ISSUER: ${JWT_ISSUER:-shalosh}
+    depends_on:
+      - postgres
+      - localstack
+    restart: unless-stopped
+  admin_frontend:
+    build:
+      context: ./admin_frontend
+      dockerfile: Dockerfile
+    image: shalosh-admin-frontend:latest
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    restart: unless-stopped
+  client_frontend:
+    build:
+      context: ./client_frontend
+      dockerfile: Dockerfile
+    image: shalosh-client-frontend:latest
+    ports:
+      - "3002:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    restart: unless-stopped
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-shalosh}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+  localstack:
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: "s3,sqs,sns"
+      EDGE_PORT: 4566
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  localstack_data:
