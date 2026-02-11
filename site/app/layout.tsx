@@ -47,8 +47,8 @@ export default function RootLayout({
         <Providers themeProps={{ attribute: "class", defaultTheme: "dark" }}>
           <div className="relative flex flex-col min-h-screen">
             <header className="w-full">
-              <div className="container mx-auto max-w-7xl px-6 py-4 flex items-center justify-between gap-6">
-                <NextLink className="flex items-center h-10" href="/">
+              <div className="container mx-auto max-w-7xl px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                <NextLink className="flex items-center h-10 shrink-0" href="/">
                   <img
                     src="/shalosh_marca_x.svg"
                     alt="Shalosh"
@@ -60,7 +60,7 @@ export default function RootLayout({
                     className="h-10 w-auto hidden dark:block"
                   />
                 </NextLink>
-                <div className="flex items-center gap-4 h-10">
+                <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto sm:flex-nowrap sm:h-10">
                   <MainNav />
                   <ThemeSwitch className="text-foreground/80 hover:text-foreground" />
                 </div>

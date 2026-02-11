@@ -16,7 +16,7 @@ export function MainNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex items-center gap-6 text-sm font-medium h-10">
+    <nav className="flex flex-wrap items-center gap-4 text-sm font-medium leading-none sm:flex-nowrap sm:gap-6 sm:h-10">
       {navLinks.map((link) => {
         const isActive = pathname === link.href;
 

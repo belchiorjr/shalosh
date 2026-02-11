@@ -4,7 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
 import clsx from "clsx";
 
-const slides = [
+type SlideCta = {
+  label: string;
+  href: string;
+};
+
+type Slide = {
+  id: string;
+  title: string;
+  description: string;
+  tag: string;
+  image: string;
+  primaryCta?: SlideCta;
+  secondaryCta?: SlideCta;
+};
+
+const slides: Slide[] = [
   {
     id: "projeto-travado",
     title: "A solução que faltava para virar o jogo do seu projeto",

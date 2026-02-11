@@ -1,16 +1,25 @@
 .PHONY: help up-site down-site git-push
 
+COMPOSE_CMD := $(shell if docker compose version >/dev/null 2>&1; then echo "docker compose"; elif docker-compose version >/dev/null 2>&1; then echo "docker-compose"; fi)
+
 help:
 	@echo "Targets:"
 	@echo "  up-site  Build and start site container (detached)"
 	@echo "  down-site  Stop and remove containers"
 	@echo "  git-push  Add/commit/push with message \"DESC - <date>\""
 
-up-site:
-	docker compose up --build -d site
+check-compose:
+	@if [ -z "$(COMPOSE_CMD)" ]; then \
+		echo "Docker Compose not found."; \
+		echo "Install with: sudo apt-get update && sudo apt-get install -y docker-compose-plugin"; \
+		exit 1; \
+	fi
 
-down-site:
-	docker compose down
+up-site: check-compose
+	$(COMPOSE_CMD) up --build -d site
+
+down-site: check-compose
+	$(COMPOSE_CMD) down
 
 git-push:
 	@if [ -z "$(DESC)" ]; then \

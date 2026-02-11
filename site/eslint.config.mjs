@@ -1,5 +1,4 @@
 import { defineConfig, globalIgnores } from "eslint/config";
-import { fixupConfigRules, fixupPluginRules } from "@eslint/compat";
 import react from "eslint-plugin-react";
 import unusedImports from "eslint-plugin-unused-imports";
 import _import from "eslint-plugin-import";
@@ -43,21 +42,21 @@ export default defineConfig([globalIgnores([
     "!**/react-shim.js",
     "!**/tsup.config.ts",
 ]), {
-    extends: fixupConfigRules(compat.extends(
+    extends: compat.extends(
         "plugin:react/recommended",
         "plugin:prettier/recommended",
         "plugin:react-hooks/recommended",
         "plugin:jsx-a11y/recommended",
         "plugin:@next/next/recommended",
-    )),
+    ),
 
     plugins: {
-        react: fixupPluginRules(react),
+        react,
         "unused-imports": unusedImports,
-        import: fixupPluginRules(_import),
+        import: _import,
         "@typescript-eslint": typescriptEslint,
-        "jsx-a11y": fixupPluginRules(jsxA11Y),
-        prettier: fixupPluginRules(prettier),
+        "jsx-a11y": jsxA11Y,
+        prettier,
     },
 
     languageOptions: {
