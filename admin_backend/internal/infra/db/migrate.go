@@ -2,14 +2,15 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
-func Migrate(ctx context.Context, db *sql.DB, migrations fs.FS) error {
+func Migrate(ctx context.Context, db *sqlx.DB, migrations fs.FS) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version TEXT PRIMARY KEY,
@@ -59,7 +60,7 @@ func Migrate(ctx context.Context, db *sql.DB, migrations fs.FS) error {
 	return nil
 }
 
-func loadApplied(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+func loadApplied(ctx context.Context, db *sqlx.DB) (map[string]bool, error) {
 	rows, err := db.QueryContext(ctx, "SELECT version FROM schema_migrations")
 	if err != nil {
 		return nil, fmt.Errorf("list schema_migrations: %w", err)
@@ -81,8 +82,8 @@ func loadApplied(ctx context.Context, db *sql.DB) (map[string]bool, error) {
 	return applied, nil
 }
 
-func runMigration(ctx context.Context, db *sql.DB, name, sqlText string) error {
-	tx, err := db.BeginTx(ctx, nil)
+func runMigration(ctx context.Context, db *sqlx.DB, name, sqlText string) error {
+	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("start migration %s: %w", name, err)
 	}

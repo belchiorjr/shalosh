@@ -2,14 +2,14 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 )
 
-func Connect(ctx context.Context, cfg Config) (*sql.DB, error) {
-	db, err := sql.Open("pgx", cfg.DSN())
+func Connect(ctx context.Context, cfg Config) (*sqlx.DB, error) {
+	db, err := sqlx.Open("postgres", cfg.DSN())
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_ADMIN_BACKEND_URL: ${ADMIN_BACKEND_URL:-http://localhost:8080}
     restart: unless-stopped
   admin_backend:
     build:
@@ -31,6 +32,7 @@ services:
       AWS_REGION: ${LOCALSTACK_REGION:-us-east-1}
       JWT_SECRET: ${JWT_SECRET:-change-me}
       JWT_ISSUER: ${JWT_ISSUER:-shalosh}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
     depends_on:
       - postgres
       - localstack
@@ -70,6 +72,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_ADMIN_BACKEND_URL: ${ADMIN_BACKEND_URL:-http://localhost:8080}
     restart: unless-stopped
   client_frontend:
     build:

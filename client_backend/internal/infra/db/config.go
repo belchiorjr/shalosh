@@ -40,6 +40,11 @@ func (c Config) DSN() string {
 	return u.String()
 }
 
+func (c Config) WithDatabase(name string) Config {
+	c.Name = name
+	return c
+}
+
 func getenv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

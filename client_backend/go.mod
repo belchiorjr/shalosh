@@ -1,5 +1,8 @@
 module client_backend
 
-go 1.22
+go 1.21
 
-require github.com/jackc/pgx/v5 v5.7.6
+require (
+	github.com/jmoiron/sqlx v1.4.0
+	github.com/lib/pq v1.10.9
+)

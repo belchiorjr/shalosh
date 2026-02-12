@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_name_lower_key
+  ON profiles ((LOWER(name)));

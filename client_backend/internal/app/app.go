@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 
 	"client_backend/internal/infra/clock"
@@ -12,11 +11,12 @@ import (
 	"client_backend/internal/infra/repository/memory"
 	apphttp "client_backend/internal/interfaces/http"
 	"client_backend/internal/usecase"
+	"github.com/jmoiron/sqlx"
 )
 
 type App struct {
 	Handler    http.Handler
-	DB         *sql.DB
+	DB         *sqlx.DB
 	Localstack *localstack.Client
 }
 
@@ -24,6 +24,9 @@ func New() (*App, error) {
 	ctx := context.Background()
 
 	dbConfig := db.FromEnv()
+	if err := db.EnsureDatabase(ctx, dbConfig); err != nil {
+		return nil, err
+	}
 	database, err := db.Connect(ctx, dbConfig)
 	if err != nil {
 		return nil, err
