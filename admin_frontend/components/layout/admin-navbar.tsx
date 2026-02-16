@@ -133,7 +133,7 @@ export function AdminNavbar({ onOpenSidebar }: AdminNavbarProps) {
       writeUserCookie(updatedUser);
       return {};
     } catch {
-      return { error: "Falha de conexão com o backend." };
+      return { error: "Falha de conexão com a API." };
     }
   };
 

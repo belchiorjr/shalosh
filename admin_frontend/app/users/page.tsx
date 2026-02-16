@@ -62,6 +62,7 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewingUser, setViewingUser] = useState<SystemUser | null>(null);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editPassword, setEditPassword] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -108,7 +109,7 @@ export default function UsersPage() {
         setUsers(normalizedUsers);
         await loadCurrentUserSecurityContext(token);
       } catch {
-        setError("Falha de conexão com o backend.");
+        setError("Falha de conexão com a API.");
       } finally {
         setIsLoading(false);
       }
@@ -118,6 +119,24 @@ export default function UsersPage() {
   }, []);
 
   const totalUsers = useMemo(() => users.length, [users.length]);
+
+  const openCreateUserModal = () => {
+    setIsCreatingUser(true);
+    setEditingUser({
+      id: "",
+      name: "",
+      email: "",
+      login: "",
+      phone: "",
+      address: "",
+      avatar: "",
+      active: true,
+    });
+    setSelectedProfileID("");
+    setIsLoadingUserProfiles(false);
+    setEditPassword("");
+    setEditError(null);
+  };
 
   const mergeUserInList = (updatedUser: SystemUser) => {
     setUsers((currentUsers) =>
@@ -167,7 +186,7 @@ export default function UsersPage() {
       }
 
       if (Array.isArray(payload) || !("id" in payload) || !payload.id) {
-        return { error: "Resposta inválida do backend." };
+        return { error: "Resposta inválida da API." };
       }
 
       return {
@@ -185,7 +204,67 @@ export default function UsersPage() {
         },
       };
     } catch {
-      return { error: "Falha de conexão com o backend." };
+      return { error: "Falha de conexão com a API." };
+    }
+  };
+
+  const createUserOnBackend = async (
+    user: SystemUser,
+    password: string,
+  ): Promise<{ user?: SystemUser; error?: string }> => {
+    const token = readTokenFromCookie();
+    if (!token) {
+      return { error: "Sessão inválida. Faça login novamente." };
+    }
+
+    try {
+      const response = await fetch(`${adminBackendUrl}/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email,
+          login: user.login,
+          password,
+          phone: user.phone || "",
+          address: user.address || "",
+          avatar: user.avatar || "",
+          active: Boolean(user.active),
+        }),
+      });
+
+      const payload = (await response.json()) as SystemUser | ApiError;
+      if (!response.ok) {
+        const message =
+          !Array.isArray(payload) && "error" in payload && payload.error
+            ? payload.error
+            : "Não foi possível cadastrar o usuário.";
+        return { error: message };
+      }
+
+      if (Array.isArray(payload) || !("id" in payload) || !payload.id) {
+        return { error: "Resposta inválida da API." };
+      }
+
+      return {
+        user: {
+          id: payload.id,
+          name: payload.name || "",
+          email: payload.email || "",
+          login: payload.login || "",
+          phone: payload.phone || "",
+          address: payload.address || "",
+          avatar: payload.avatar || "",
+          active: Boolean(payload.active),
+          created: payload.created,
+          updated: payload.updated,
+        },
+      };
+    } catch {
+      return { error: "Falha de conexão com a API." };
     }
   };
 
@@ -283,14 +362,14 @@ export default function UsersPage() {
       }
 
       if (Array.isArray(payload) || !("profileIds" in payload)) {
-        setEditError("Resposta inválida do backend.");
+        setEditError("Resposta inválida da API.");
         setSelectedProfileID("");
         return;
       }
 
       setSelectedProfileID(payload.profileIds?.[0] || "");
     } catch {
-      setEditError("Falha de conexão com o backend.");
+      setEditError("Falha de conexão com a API.");
       setSelectedProfileID("");
     } finally {
       setIsLoadingUserProfiles(false);
@@ -329,7 +408,7 @@ export default function UsersPage() {
 
       return {};
     } catch {
-      return { error: "Falha de conexão com o backend." };
+      return { error: "Falha de conexão com a API." };
     }
   };
 
@@ -360,6 +439,7 @@ export default function UsersPage() {
     }
 
     if (selectedAction === "edit") {
+      setIsCreatingUser(false);
       setEditingUser({
         ...user,
         phone: user.phone || "",
@@ -412,13 +492,20 @@ export default function UsersPage() {
       return;
     }
 
+    if (isCreatingUser && !editPassword.trim()) {
+      setEditError("A senha é obrigatória para cadastrar o usuário.");
+      return;
+    }
+
     setIsSavingEdit(true);
     setEditError(null);
 
-    const result = await updateUserOnBackend(
-      normalizedUser,
-      editPassword.trim() || undefined,
-    );
+    const result = isCreatingUser
+      ? await createUserOnBackend(normalizedUser, editPassword.trim())
+      : await updateUserOnBackend(
+          normalizedUser,
+          editPassword.trim() || undefined,
+        );
 
     setIsSavingEdit(false);
 
@@ -428,7 +515,11 @@ export default function UsersPage() {
     }
 
     if (!result.user) {
-      setEditError("Não foi possível atualizar o usuário.");
+      setEditError(
+        isCreatingUser
+          ? "Não foi possível cadastrar o usuário."
+          : "Não foi possível atualizar o usuário.",
+      );
       return;
     }
 
@@ -443,16 +534,28 @@ export default function UsersPage() {
           setViewingUser(result.user);
         }
         setEditingUser(result.user);
-        setEditError(`${profileResult.error} Os dados básicos foram salvos.`);
+        setIsCreatingUser(false);
+        setEditError(
+          `${profileResult.error} ${
+            isCreatingUser
+              ? "Os dados básicos foram cadastrados."
+              : "Os dados básicos foram salvos."
+          }`,
+        );
         return;
       }
     }
 
-    mergeUserInList(result.user);
+    if (isCreatingUser) {
+      setUsers((currentUsers) => [result.user as SystemUser, ...currentUsers]);
+    } else {
+      mergeUserInList(result.user);
+    }
     if (viewingUser?.id === result.user.id) {
       setViewingUser(result.user);
     }
     setEditingUser(null);
+    setIsCreatingUser(false);
     setSelectedProfileID("");
     setIsLoadingUserProfiles(false);
     setEditPassword("");
@@ -489,10 +592,19 @@ export default function UsersPage() {
   return (
     <section className="space-y-6">
       <div className="rounded-2xl border border-default-200 bg-content1/70 p-6 backdrop-blur-md">
-        <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-foreground/60">
-          <MaterialSymbol name="person" className="text-[16px]" />
-          Usuários
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-foreground/60">
+            <MaterialSymbol name="person" className="text-[16px]" />
+            Usuários
+          </p>
+          <Button
+            color="primary"
+            startContent={<MaterialSymbol name="person_add" className="text-[18px]" />}
+            onPress={openCreateUserModal}
+          >
+            Novo usuário
+          </Button>
+        </div>
         <h1 className="mt-2 text-3xl font-semibold text-foreground">
           Gestão de Usuários
         </h1>
@@ -750,6 +862,7 @@ export default function UsersPage() {
         onOpenChange={(isOpen) => {
           if (!isOpen) {
             setEditingUser(null);
+            setIsCreatingUser(false);
             setSelectedProfileID("");
             setIsLoadingUserProfiles(false);
             setEditPassword("");
@@ -766,7 +879,7 @@ export default function UsersPage() {
               <ModalHeader>
                 <span className="inline-flex items-center gap-2">
                   <MaterialSymbol name="edit" className="text-[20px] text-primary" />
-                  Editar usuário
+                  {isCreatingUser ? "Cadastrar usuário" : "Editar usuário"}
                 </span>
               </ModalHeader>
               <ModalBody className="gap-4">
@@ -824,11 +937,12 @@ export default function UsersPage() {
                 />
 
                 <Input
-                  label="Nova senha (opcional)"
+                  label={isCreatingUser ? "Senha" : "Nova senha (opcional)"}
                   value={editPassword}
                   onValueChange={setEditPassword}
                   type="password"
-                  placeholder="Informe para alterar"
+                  placeholder={isCreatingUser ? "Informe a senha de acesso" : "Informe para alterar"}
+                  isRequired={isCreatingUser}
                 />
 
                 <div className="rounded-xl border border-default-200 bg-default-50 p-3">
@@ -893,6 +1007,7 @@ export default function UsersPage() {
                   startContent={<MaterialSymbol name="close" className="text-[18px]" />}
                   onPress={() => {
                     setEditingUser(null);
+                    setIsCreatingUser(false);
                     setSelectedProfileID("");
                     setIsLoadingUserProfiles(false);
                     setEditPassword("");
@@ -912,7 +1027,7 @@ export default function UsersPage() {
                     )
                   }
                 >
-                  Salvar alterações
+                  {isCreatingUser ? "Cadastrar usuário" : "Salvar alterações"}
                 </Button>
               </ModalFooter>
             </form>

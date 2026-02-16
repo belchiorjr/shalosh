@@ -41,7 +41,7 @@ export class HttpSecurityRepository implements SecurityRepository {
     );
 
     if (!isObject(payload)) {
-      throw new UnexpectedSecurityError("Resposta inválida do backend.");
+      throw new UnexpectedSecurityError("Resposta inválida da API.");
     }
 
     return {
@@ -60,7 +60,7 @@ export class HttpSecurityRepository implements SecurityRepository {
     );
 
     if (!Array.isArray(payload)) {
-      throw new UnexpectedSecurityError("Resposta inválida do backend.");
+      throw new UnexpectedSecurityError("Resposta inválida da API.");
     }
 
     return payload.map((item) => mapPermission(item));
@@ -112,7 +112,7 @@ export class HttpSecurityRepository implements SecurityRepository {
     );
 
     if (!Array.isArray(payload)) {
-      throw new UnexpectedSecurityError("Resposta inválida do backend.");
+      throw new UnexpectedSecurityError("Resposta inválida da API.");
     }
 
     return payload.map((item) => mapProfile(item));
@@ -182,12 +182,12 @@ export class HttpSecurityRepository implements SecurityRepository {
     );
 
     if (!isObject(payload)) {
-      throw new UnexpectedSecurityError("Resposta inválida do backend.");
+      throw new UnexpectedSecurityError("Resposta inválida da API.");
     }
 
     const permissionIds = payload.permissionIds;
     if (!Array.isArray(permissionIds)) {
-      throw new UnexpectedSecurityError("Resposta inválida do backend.");
+      throw new UnexpectedSecurityError("Resposta inválida da API.");
     }
 
     return permissionIds
@@ -262,7 +262,7 @@ export class HttpSecurityRepository implements SecurityRepository {
 
 function mapPermission(payload: unknown): Permission {
   if (!isObject(payload)) {
-    throw new UnexpectedSecurityError("Resposta inválida do backend.");
+    throw new UnexpectedSecurityError("Resposta inválida da API.");
   }
 
   return {
@@ -278,7 +278,7 @@ function mapPermission(payload: unknown): Permission {
 
 function mapProfile(payload: unknown): Profile {
   if (!isObject(payload)) {
-    throw new UnexpectedSecurityError("Resposta inválida do backend.");
+    throw new UnexpectedSecurityError("Resposta inválida da API.");
   }
 
   return {

@@ -8,6 +8,7 @@ import { AdminFooter } from "./admin-footer";
 import { AdminNavbar } from "./admin-navbar";
 import { AdminSidebar } from "./admin-sidebar";
 import {
+  applySystemFont,
   applySystemBackground,
   loadSystemSettings,
 } from "./system-settings";
@@ -27,6 +28,7 @@ export function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     const settings = loadSystemSettings("light");
     applySystemBackground(settings.background);
+    applySystemFont(settings.font);
   }, []);
 
   if (pathname.startsWith("/login")) {

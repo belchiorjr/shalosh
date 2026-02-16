@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"admin_backend/internal/infra/auth"
 	"admin_backend/internal/infra/clock"
@@ -10,6 +11,8 @@ import (
 	"admin_backend/internal/infra/id"
 	"admin_backend/internal/infra/localstack"
 	"admin_backend/internal/infra/repository/memory"
+	"admin_backend/internal/infra/repository/postgres"
+	"admin_backend/internal/infra/zipcode"
 	apphttp "admin_backend/internal/interfaces/http"
 	"admin_backend/internal/usecase"
 	"github.com/jmoiron/sqlx"
@@ -52,9 +55,32 @@ func New() (*App, error) {
 	ids := id.New()
 	clockProvider := clock.New()
 	tokenManager := auth.NewTokenManager(auth.FromEnv())
+	zipCodeLookup := zipcode.NewViaCEPClient(8 * time.Second)
+	clientRepo := postgres.NewClientRepository(database)
+	authRepo := postgres.NewAuthRepository(database)
+	authorizationRepo := postgres.NewAuthorizationRepository(database)
+	userProfileRepo := postgres.NewUserProfileRepository(database)
+	securityRepo := postgres.NewSecurityRepository(database)
+	projectRepo := postgres.NewProjectRepository(database)
 
 	userService := usecase.NewUserService(userRepo, ids, clockProvider)
-	userHandler := apphttp.NewUserHandler(userService, database, tokenManager)
+	clientService := usecase.NewClientService(clientRepo, zipCodeLookup)
+	authService := usecase.NewAuthService(authRepo)
+	authorizationService := usecase.NewAuthorizationService(authorizationRepo)
+	userProfileService := usecase.NewUserProfileService(userProfileRepo)
+	securityService := usecase.NewSecurityService(securityRepo)
+	projectService := usecase.NewProjectService(projectRepo)
+	userHandler := apphttp.NewUserHandler(
+		userService,
+		clientService,
+		authService,
+		authorizationService,
+		userProfileService,
+		securityService,
+		projectService,
+		database,
+		tokenManager,
+	)
 
 	mux := http.NewServeMux()
 	userHandler.RegisterRoutes(mux)

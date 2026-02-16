@@ -12,8 +12,10 @@ import (
 
 func Migrate(ctx context.Context, db *sqlx.DB, migrations fs.FS) error {
 	if _, err := db.ExecContext(ctx, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
 		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version TEXT PRIMARY KEY,
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			version TEXT NOT NULL UNIQUE,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`); err != nil {
@@ -86,6 +88,41 @@ func runMigration(ctx context.Context, db *sqlx.DB, name, sqlText string) error 
 	tx, err := db.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("start migration %s: %w", name, err)
+	}
+
+	if name == "admin_0014_convert_ids_to_uuid.sql" {
+		// Legacy safety: drop FK constraints that can block PK ID rewrites in admin_0014.
+		if _, err := tx.ExecContext(ctx, `
+			DO $$
+			DECLARE
+			  fk_record RECORD;
+			BEGIN
+			  FOR fk_record IN
+			    SELECT
+			      con.conrelid::regclass AS table_name,
+			      con.conname
+			    FROM pg_constraint con
+			    INNER JOIN pg_class rel
+			      ON rel.oid = con.conrelid
+			    WHERE con.contype = 'f'
+			      AND rel.relname IN (
+			        'user_profiles',
+			        'profile_permissions',
+			        'client_addresses',
+			        'client_phones'
+			      )
+			  LOOP
+			    EXECUTE format(
+			      'ALTER TABLE %s DROP CONSTRAINT IF EXISTS %I',
+			      fk_record.table_name,
+			      fk_record.conname
+			    );
+			  END LOOP;
+			END $$;
+		`); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("prepare migration %s: %w", name, err)
+		}
 	}
 
 	if _, err := tx.ExecContext(ctx, sqlText); err != nil {

@@ -1,11 +1,23 @@
 export type AdminThemeMode = "light" | "dark";
 
+export type AdminSystemFont =
+  | "quicksand"
+  | "metrophobic"
+  | "parkinsans"
+  | "antic"
+  | "ubuntu-sans"
+  | "anaheim"
+  | "arima"
+  | "bellota";
+
 export interface AdminSystemSettings {
   theme: AdminThemeMode;
   background: string;
+  font: AdminSystemFont;
 }
 
 const SYSTEM_SETTINGS_STORAGE_KEY = "admin_system_settings";
+export const DEFAULT_SYSTEM_FONT: AdminSystemFont = "quicksand";
 
 export const DEFAULT_SYSTEM_BACKGROUND =
   "radial-gradient(1200px circle at 10% 10%, rgba(59,130,246,0.20), transparent 42%), radial-gradient(900px circle at 90% 15%, rgba(16,185,129,0.18), transparent 45%), linear-gradient(160deg, #f8fafc 0%, #eef2ff 48%, #ecfeff 100%)";
@@ -89,8 +101,61 @@ export const SYSTEM_BACKGROUND_PRESETS: Array<{
   },
 ];
 
+export const SYSTEM_FONT_PRESETS: Array<{
+  id: AdminSystemFont;
+  label: string;
+  value: string;
+}> = [
+  {
+    id: "quicksand",
+    label: "Quicksand (Padrão)",
+    value: "'Quicksand', sans-serif",
+  },
+  {
+    id: "metrophobic",
+    label: "Metrophobic",
+    value: "'Metrophobic', sans-serif",
+  },
+  {
+    id: "parkinsans",
+    label: "Parkinsans",
+    value: "'Parkinsans', sans-serif",
+  },
+  {
+    id: "antic",
+    label: "Antic",
+    value: "'Antic', sans-serif",
+  },
+  {
+    id: "ubuntu-sans",
+    label: "Ubuntu Sans",
+    value: "'Ubuntu Sans', sans-serif",
+  },
+  {
+    id: "anaheim",
+    label: "Anaheim",
+    value: "'Anaheim', sans-serif",
+  },
+  {
+    id: "arima",
+    label: "Arima",
+    value: "'Arima', sans-serif",
+  },
+  {
+    id: "bellota",
+    label: "Bellota",
+    value: "'Bellota', sans-serif",
+  },
+];
+
 export function resolveThemeMode(input?: string | null): AdminThemeMode {
   return input === "dark" ? "dark" : "light";
+}
+
+export function resolveSystemFont(input?: string | null): AdminSystemFont {
+  const normalized = (input || "").toLowerCase().trim();
+  const font = SYSTEM_FONT_PRESETS.find((preset) => preset.id === normalized);
+  return font?.id || DEFAULT_SYSTEM_FONT;
 }
 
 export function loadSystemSettings(
@@ -100,14 +165,19 @@ export function loadSystemSettings(
     return {
       theme: fallbackTheme,
       background: DEFAULT_SYSTEM_BACKGROUND,
+      font: DEFAULT_SYSTEM_FONT,
     };
   }
 
-  const raw = window.localStorage.getItem(SYSTEM_SETTINGS_STORAGE_KEY);
+  const currentUserStorageKey = resolveSystemSettingsStorageKey();
+  const raw =
+    window.localStorage.getItem(currentUserStorageKey) ||
+    window.localStorage.getItem(SYSTEM_SETTINGS_STORAGE_KEY);
   if (!raw) {
     return {
       theme: fallbackTheme,
       background: DEFAULT_SYSTEM_BACKGROUND,
+      font: DEFAULT_SYSTEM_FONT,
     };
   }
 
@@ -116,11 +186,13 @@ export function loadSystemSettings(
     return {
       theme: resolveThemeMode(parsed.theme || fallbackTheme),
       background: parsed.background || DEFAULT_SYSTEM_BACKGROUND,
+      font: resolveSystemFont(parsed.font),
     };
   } catch {
     return {
       theme: fallbackTheme,
       background: DEFAULT_SYSTEM_BACKGROUND,
+      font: DEFAULT_SYSTEM_FONT,
     };
   }
 }
@@ -131,8 +203,12 @@ export function persistSystemSettings(settings: AdminSystemSettings): void {
   }
 
   window.localStorage.setItem(
-    SYSTEM_SETTINGS_STORAGE_KEY,
-    JSON.stringify(settings),
+    resolveSystemSettingsStorageKey(),
+    JSON.stringify({
+      theme: resolveThemeMode(settings.theme),
+      background: settings.background || DEFAULT_SYSTEM_BACKGROUND,
+      font: resolveSystemFont(settings.font),
+    }),
   );
 }
 
@@ -145,4 +221,126 @@ export function applySystemBackground(background: string): void {
     "--admin-shell-background",
     background || DEFAULT_SYSTEM_BACKGROUND,
   );
+}
+
+export function applySystemFont(font: AdminSystemFont): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const resolvedFont = resolveSystemFont(font);
+  const fontPreset = SYSTEM_FONT_PRESETS.find((preset) => preset.id === resolvedFont);
+  if (!fontPreset) {
+    return;
+  }
+
+  const target = document.body || document.documentElement;
+  if (!target) {
+    return;
+  }
+
+  if (fontPreset.id === DEFAULT_SYSTEM_FONT) {
+    target.style.removeProperty("--font-sans");
+    return;
+  }
+
+  target.style.setProperty("--font-sans", fontPreset.value);
+}
+
+function resolveSystemSettingsStorageKey(): string {
+  if (typeof window === "undefined") {
+    return SYSTEM_SETTINGS_STORAGE_KEY;
+  }
+
+  const login =
+    readLoginFromUserCookie() ||
+    readLoginFromAccountProfile() ||
+    readLoginFromTokenCookie() ||
+    "default";
+
+  return `${SYSTEM_SETTINGS_STORAGE_KEY}:${sanitizeStorageSegment(login)}`;
+}
+
+function readLoginFromUserCookie(): string {
+  const raw = readCookieValue("admin_user");
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw)) as { login?: string };
+    return (parsed.login || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function readLoginFromAccountProfile(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const raw = window.localStorage.getItem("admin_account_profile");
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { login?: string };
+    return (parsed.login || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function readLoginFromTokenCookie(): string {
+  const token = readCookieValue("admin_token");
+  if (!token) {
+    return "";
+  }
+
+  const tokenValue = decodeURIComponent(token);
+  const tokenParts = tokenValue.split(".");
+  if (tokenParts.length < 2) {
+    return "";
+  }
+
+  try {
+    const payloadJSON = decodeBase64URL(tokenParts[1]);
+    const payload = JSON.parse(payloadJSON) as { login?: string };
+    return (payload.login || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function decodeBase64URL(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const paddingLength = normalized.length % 4;
+  const padded =
+    paddingLength === 0
+      ? normalized
+      : normalized + "=".repeat(4 - paddingLength);
+
+  return atob(padded);
+}
+
+function readCookieValue(key: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const cookie = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(`${key}=`));
+  if (!cookie) {
+    return null;
+  }
+
+  return cookie.split("=")[1] || null;
+}
+
+function sanitizeStorageSegment(value: string): string {
+  const sanitized = value.toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  return sanitized || "default";
 }

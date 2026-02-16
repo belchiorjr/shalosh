@@ -250,7 +250,7 @@ export function AccountModal({
                 </p>
                 <p className="mt-1 text-xs text-foreground/70">
                   Se informar um novo login e/ou senha, esses dados serão
-                  atualizados no backend do sistema.
+                  atualizados na API do sistema.
                 </p>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">

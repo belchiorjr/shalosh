@@ -6,12 +6,16 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MaterialSymbol } from "@/components/material-symbol";
 
-const mainMenuItems = [{ href: "/", label: "Painel" }];
+const mainMenuItems = [
+  { href: "/", label: "Painel", icon: "dashboard" },
+  { href: "/clientes", label: "Clientes", icon: "groups" },
+  { href: "/projetos", label: "Projetos", icon: "workspaces" },
+];
 
 const securitySubmenuItems = [
-  { href: "/users", label: "Usuários" },
-  { href: "/permissoes", label: "Permissões" },
-  { href: "/perfis", label: "Perfis" },
+  { href: "/users", label: "Usuários", icon: "person" },
+  { href: "/permissoes", label: "Permissões", icon: "key" },
+  { href: "/perfis", label: "Perfis", icon: "badge" },
 ];
 
 interface AdminSidebarProps {
@@ -24,9 +28,14 @@ export function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
     () => securitySubmenuItems.some((item) => isPathActive(pathname, item.href)),
     [pathname],
   );
+  const [isMounted, setIsMounted] = useState(false);
   const [isSecurityMenuOpen, setIsSecurityMenuOpen] = useState(
     isSecurityPathActive,
   );
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isSecurityPathActive) {
@@ -50,17 +59,21 @@ export function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
             onClick={onNavigate}
             className={clsx(
               "flex items-center rounded-xl border px-3 py-2 text-sm transition-colors",
+              isMounted ? "gap-2" : null,
               isActive
                 ? "border-primary/40 bg-primary/10 text-primary"
                 : "border-transparent text-foreground/80 hover:border-default-300 hover:bg-default-100 hover:text-foreground",
             )}
           >
+            {isMounted ? (
+              <MaterialSymbol name={item.icon} className="text-[18px]" />
+            ) : null}
             {item.label}
           </Link>
         );
       })}
 
-      <div className="mt-2 rounded-xl border border-default-200/80 bg-content1/40 p-2">
+      <div className="mt-2 rounded-xl bg-content1/40 p-2">
         <button
           type="button"
           onClick={() => setIsSecurityMenuOpen((current) => !current)}
@@ -68,7 +81,12 @@ export function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
           aria-expanded={isSecurityMenuOpen}
           aria-controls="security-submenu"
         >
-          Segurança
+          <span className={clsx("inline-flex items-center", isMounted ? "gap-1.5" : null)}>
+            {isMounted ? (
+              <MaterialSymbol name="security" className="text-[14px]" />
+            ) : null}
+            Segurança
+          </span>
           <MaterialSymbol
             name={isSecurityMenuOpen ? "keyboard_arrow_down" : "keyboard_arrow_right"}
             className="text-[16px]"
@@ -87,11 +105,15 @@ export function AdminSidebar({ pathname, onNavigate }: AdminSidebarProps) {
                   onClick={onNavigate}
                   className={clsx(
                     "flex items-center rounded-lg border px-3 py-2 text-sm transition-colors",
+                    isMounted ? "gap-2" : null,
                     isActive
                       ? "border-primary/40 bg-primary/10 text-primary"
                       : "border-transparent text-foreground/80 hover:border-default-300 hover:bg-default-100 hover:text-foreground",
                   )}
                 >
+                  {isMounted ? (
+                    <MaterialSymbol name={item.icon} className="text-[18px]" />
+                  ) : null}
                   {item.label}
                 </Link>
               );

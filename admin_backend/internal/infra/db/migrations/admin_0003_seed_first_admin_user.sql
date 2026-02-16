@@ -1,6 +1,5 @@
-INSERT INTO users (id, name, email, login, senha, ativo, created, updated)
+INSERT INTO users (name, email, login, senha, ativo, created, updated)
 VALUES (
-  'admin',
   'administrador',
   'admin@shalosh.local',
   'admi',

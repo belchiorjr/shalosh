@@ -12,8 +12,10 @@ import (
 
 func Migrate(ctx context.Context, db *sqlx.DB, migrations fs.FS) error {
 	if _, err := db.ExecContext(ctx, `
+		CREATE EXTENSION IF NOT EXISTS pgcrypto;
 		CREATE TABLE IF NOT EXISTS schema_migrations (
-			version TEXT PRIMARY KEY,
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			version TEXT NOT NULL UNIQUE,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`); err != nil {

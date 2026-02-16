@@ -13,7 +13,7 @@ export function mapSecurityErrorToMessage(
   }
 
   if (cause instanceof SecurityServiceUnavailableError) {
-    return "Falha de conexão com o backend.";
+    return "Falha de conexão com a API.";
   }
 
   if (cause instanceof UnexpectedSecurityError) {

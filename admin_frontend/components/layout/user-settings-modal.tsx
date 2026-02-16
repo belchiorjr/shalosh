@@ -14,12 +14,17 @@ import { useEffect, useMemo, useState } from "react";
 
 import { MaterialSymbol } from "@/components/material-symbol";
 import {
+  applySystemFont,
   applySystemBackground,
+  DEFAULT_SYSTEM_FONT,
   DEFAULT_SYSTEM_BACKGROUND,
   loadSystemSettings,
   persistSystemSettings,
+  resolveSystemFont,
   resolveThemeMode,
   SYSTEM_BACKGROUND_PRESETS,
+  SYSTEM_FONT_PRESETS,
+  type AdminSystemFont,
   type AdminThemeMode,
 } from "./system-settings";
 
@@ -34,6 +39,8 @@ export function UserSettingsModal({
 }: UserSettingsModalProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const [selectedTheme, setSelectedTheme] = useState<AdminThemeMode>("light");
+  const [selectedFont, setSelectedFont] =
+    useState<AdminSystemFont>(DEFAULT_SYSTEM_FONT);
   const [selectedBackground, setSelectedBackground] = useState<string>(
     DEFAULT_SYSTEM_BACKGROUND,
   );
@@ -45,6 +52,7 @@ export function UserSettingsModal({
 
     const settings = loadSystemSettings(resolveThemeMode(resolvedTheme));
     setSelectedTheme(settings.theme);
+    setSelectedFont(settings.font);
     setSelectedBackground(settings.background);
   }, [isOpen, resolvedTheme]);
 
@@ -61,9 +69,12 @@ export function UserSettingsModal({
         backgroundImage: `linear-gradient(${overlayColor}, ${overlayColor}), ${selectedBackground}`,
         backgroundSize: "cover",
         backgroundPosition: "center",
+        fontFamily:
+          SYSTEM_FONT_PRESETS.find((preset) => preset.id === selectedFont)?.value ||
+          SYSTEM_FONT_PRESETS[0].value,
       };
     },
-    [selectedBackground, selectedTheme],
+    [selectedBackground, selectedFont, selectedTheme],
   );
 
   const handleThemeChange = (value: string) => {
@@ -72,6 +83,18 @@ export function UserSettingsModal({
     setTheme(theme);
     persistSystemSettings({
       theme,
+      font: selectedFont,
+      background: selectedBackground,
+    });
+  };
+
+  const handleFontChange = (value: string) => {
+    const font = resolveSystemFont(value);
+    setSelectedFont(font);
+    applySystemFont(font);
+    persistSystemSettings({
+      theme: selectedTheme,
+      font,
       background: selectedBackground,
     });
   };
@@ -81,6 +104,7 @@ export function UserSettingsModal({
     applySystemBackground(background);
     persistSystemSettings({
       theme: selectedTheme,
+      font: selectedFont,
       background,
     });
   };
@@ -148,6 +172,44 @@ export function UserSettingsModal({
                     </span>
                   </Radio>
                 </RadioGroup>
+              </section>
+
+              <section className="space-y-3">
+                <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-foreground/60">
+                  <MaterialSymbol name="text_fields" className="text-[16px]" />
+                  Fonte do sistema
+                </p>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SYSTEM_FONT_PRESETS.map((fontPreset) => {
+                    const isSelected = selectedFont === fontPreset.id;
+                    return (
+                      <button
+                        key={fontPreset.id}
+                        type="button"
+                        onClick={() => handleFontChange(fontPreset.id)}
+                        className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                          isSelected
+                            ? "border-primary bg-primary/10"
+                            : "border-default-200 bg-content1/95 hover:border-default-300"
+                        }`}
+                      >
+                        <p
+                          className="text-sm font-semibold text-foreground"
+                          style={{ fontFamily: fontPreset.value }}
+                        >
+                          {fontPreset.label}
+                        </p>
+                        <p
+                          className="text-xs text-foreground/70"
+                          style={{ fontFamily: fontPreset.value }}
+                        >
+                          Aa Bb Cc 123
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
 
               <section className="space-y-3">

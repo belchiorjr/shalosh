@@ -5,7 +5,7 @@ export function AdminFooter() {
         <p className="font-medium text-foreground/80">
           Shalosh - Input - Process - Output
         </p>
-        <p>All rights reserved.</p>
+        <p>Todos os direitos reservados.</p>
       </div>
     </footer>
   );

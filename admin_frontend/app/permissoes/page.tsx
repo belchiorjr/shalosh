@@ -15,7 +15,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from "@heroui/modal";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { MaterialSymbol } from "@/components/material-symbol";
 import { createPermissionsControllerDependencies } from "@/modules/security/composition/create-permissions-controller-deps";
@@ -49,11 +49,54 @@ export default function PermissionsPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formActive, setFormActive] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [searchValue, setSearchValue] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const pageSize = 10;
+  const normalizedSearch = searchValue.trim().toLowerCase();
+
+  const filteredPermissions = useMemo(() => {
+    if (!normalizedSearch) {
+      return permissions;
+    }
+
+    return permissions.filter((permission) =>
+      [permission.code, permission.name, permission.description]
+        .map((value) => (value || "").toLowerCase())
+        .some((value) => value.includes(normalizedSearch)),
+    );
+  }, [permissions, normalizedSearch]);
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredPermissions.length / pageSize)),
+    [filteredPermissions.length],
+  );
+
+  const paginatedPermissions = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredPermissions.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, filteredPermissions]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearch]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const totalPermissions = useMemo(
     () => permissions.length,
     [permissions.length],
   );
+  const currentPageStart = filteredPermissions.length
+    ? (currentPage - 1) * pageSize + 1
+    : 0;
+  const currentPageEnd = filteredPermissions.length
+    ? Math.min(currentPage * pageSize, filteredPermissions.length)
+    : 0;
 
   const openCreateModal = () => {
     setEditingPermission(null);
@@ -174,6 +217,19 @@ export default function PermissionsPage() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-default-200 bg-content1/70 backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-default-200 px-4 py-3">
+          <Input
+            value={searchValue}
+            onValueChange={setSearchValue}
+            placeholder="Pesquisar por código, nome ou descrição"
+            startContent={<MaterialSymbol name="search" className="text-[18px]" />}
+            className="w-full max-w-xl"
+          />
+          <p className="text-xs font-medium text-foreground/70">
+            Exibindo {currentPageStart}-{currentPageEnd} de{" "}
+            {filteredPermissions.length}
+          </p>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-content1/70">
@@ -215,16 +271,18 @@ export default function PermissionsPage() {
                 </tr>
               ) : null}
 
-              {!isLoading && !error && permissions.length === 0 ? (
+              {!isLoading && !error && filteredPermissions.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-foreground/70" colSpan={6}>
-                    Nenhuma permissão cadastrada.
+                    {normalizedSearch
+                      ? "Nenhuma permissão encontrada para a pesquisa."
+                      : "Nenhuma permissão cadastrada."}
                   </td>
                 </tr>
               ) : null}
 
               {!isLoading && !error
-                ? permissions.map((permission) => (
+                ? paginatedPermissions.map((permission) => (
                     <tr
                       key={permission.id}
                       className="border-b border-default-200/70 last:border-b-0"
@@ -311,6 +369,38 @@ export default function PermissionsPage() {
                 : null}
             </tbody>
           </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-default-200 px-4 py-3">
+          <p className="text-xs font-medium text-foreground/70">
+            Página {filteredPermissions.length === 0 ? 0 : currentPage} de{" "}
+            {filteredPermissions.length === 0 ? 0 : totalPages}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="flat"
+              isDisabled={isLoading || currentPage <= 1 || filteredPermissions.length === 0}
+              startContent={<MaterialSymbol name="chevron_left" className="text-[18px]" />}
+              onPress={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            >
+              Anterior
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              isDisabled={
+                isLoading ||
+                currentPage >= totalPages ||
+                filteredPermissions.length === 0
+              }
+              endContent={<MaterialSymbol name="chevron_right" className="text-[18px]" />}
+              onPress={() =>
+                setCurrentPage((page) => Math.min(totalPages, page + 1))
+              }
+            >
+              Próxima
+            </Button>
+          </div>
         </div>
       </div>
 

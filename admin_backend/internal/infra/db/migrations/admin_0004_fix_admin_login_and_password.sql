@@ -1,6 +1,6 @@
 DO $$
 DECLARE
-  target_user_id TEXT;
+  target_user_id UUID;
 BEGIN
   SELECT id
     INTO target_user_id
@@ -21,8 +21,8 @@ BEGIN
   SELECT id
     INTO target_user_id
   FROM users
-  WHERE id = 'admin' OR LOWER(login) = LOWER('admi')
-  ORDER BY CASE WHEN id = 'admin' THEN 0 ELSE 1 END
+  WHERE LOWER(login) = LOWER('admi')
+  ORDER BY created, id
   LIMIT 1;
 
   IF target_user_id IS NOT NULL THEN
@@ -36,9 +36,8 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO users (id, name, email, login, senha, ativo, created, updated)
+  INSERT INTO users (name, email, login, senha, ativo, created, updated)
   VALUES (
-    'admin',
     'administrador',
     'admin@shalosh.local',
     'admin',

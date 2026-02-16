@@ -6,8 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+)
+
+var uuidPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`,
 )
 
 type TokenManager struct {
@@ -125,9 +130,14 @@ func (m *TokenManager) ParseAndValidate(token string, now time.Time) (Claims, er
 	if claims.Exp <= 0 || now.Unix() >= claims.Exp {
 		return Claims{}, fmt.Errorf("jwt token expired")
 	}
-	if strings.TrimSpace(claims.Sub) == "" {
+	subject := strings.TrimSpace(claims.Sub)
+	if subject == "" {
 		return Claims{}, fmt.Errorf("invalid jwt subject")
 	}
+	if !uuidPattern.MatchString(subject) {
+		return Claims{}, fmt.Errorf("invalid jwt subject format")
+	}
+	claims.Sub = subject
 
 	return claims, nil
 }
