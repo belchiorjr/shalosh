@@ -45,9 +45,11 @@ const (
 
 	permissionProjectRevenuesRead   = "project_revenues.read"
 	permissionProjectRevenuesCreate = "project_revenues.create"
+	permissionProjectRevenuesUpdate = "project_revenues.update"
 
 	permissionProjectMonthlyChargesRead   = "project_monthly_charges.read"
 	permissionProjectMonthlyChargesCreate = "project_monthly_charges.create"
+	permissionProjectMonthlyChargesUpdate = "project_monthly_charges.update"
 
 	permissionProjectPhasesRead   = "project_phases.read"
 	permissionProjectPhasesCreate = "project_phases.create"

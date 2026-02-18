@@ -16,7 +16,17 @@ import {
   ModalHeader,
 } from "@heroui/modal";
 import { Tooltip } from "@heroui/tooltip";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  FormEvent,
+  KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { loadSystemSettings } from "@/components/layout/system-settings";
 import { MaterialSymbol } from "@/components/material-symbol";
@@ -39,6 +49,7 @@ interface ProjectListItem {
   hasMonthlyMaintenance: boolean;
   startDate?: string;
   endDate?: string;
+  status: string;
   active: boolean;
   clientsCount: number;
   revenuesCount: number;
@@ -75,6 +86,13 @@ interface ClientSummary {
   login: string;
 }
 
+interface UserSummary {
+  id: string;
+  name: string;
+  email: string;
+  login: string;
+}
+
 interface ProjectRelatedFile {
   id: string;
   fileName: string;
@@ -100,6 +118,8 @@ interface ProjectTask {
   id: string;
   projectId: string;
   projectPhaseId: string;
+  responsibleUserId?: string;
+  responsibleUserName?: string;
   name: string;
   description: string;
   objective: string;
@@ -140,6 +160,8 @@ interface ProjectMonthlyCharge {
   projectId: string;
   title: string;
   description: string;
+  installment: string;
+  status: string;
   amount: number;
   dueDay: number;
   startsOn?: string;
@@ -155,6 +177,13 @@ interface ProjectClient {
   role: string;
 }
 
+interface ProjectManager {
+  userId: string;
+  name: string;
+  email: string;
+  login: string;
+}
+
 interface ProjectDetail {
   id: string;
   name: string;
@@ -166,8 +195,10 @@ interface ProjectDetail {
   hasMonthlyMaintenance: boolean;
   startDate?: string;
   endDate?: string;
+  status: string;
   active: boolean;
   clients: ProjectClient[];
+  managers: ProjectManager[];
   revenues: ProjectRevenue[];
   monthlyCharges: ProjectMonthlyCharge[];
   phases: ProjectPhase[];
@@ -215,6 +246,7 @@ interface ProjectFormData {
   endDate: string;
   active: boolean;
   clientIds: string[];
+  managerUserIds: string[];
 }
 
 interface ProjectTypeFormData {
@@ -241,7 +273,6 @@ interface RevenueFormData {
   amount: string;
   expectedOn: string;
   receivedOn: string;
-  status: string;
   active: boolean;
   receipts: RevenueReceiptFormData[];
 }
@@ -250,6 +281,8 @@ interface ChargeFormData {
   projectId: string;
   title: string;
   description: string;
+  installment: string;
+  status: string;
   amount: string;
   dueDay: string;
   startsOn: string;
@@ -277,11 +310,48 @@ interface TaskFormData {
   startsOn: string;
   endsOn: string;
   status: string;
+  responsibleUserId: string;
+}
+
+interface ProjectTaskComment {
+  id: string;
+  projectTaskId: string;
+  parentCommentId?: string;
+  userId?: string;
+  clientId?: string;
+  userName?: string;
+  authorName?: string;
+  authorType?: string;
+  isProjectManager?: boolean;
+  isTaskResponsible?: boolean;
+  comment: string;
+  files: ProjectRelatedFile[];
+  created?: string;
+  updated?: string;
+}
+
+interface TaskCommentFormData {
+  comment: string;
+  parentCommentId: string;
+  files: RevenueReceiptFormData[];
 }
 
 interface TaskModalContext {
   phase: ProjectPhase;
   subPhase: ProjectTask | null;
+}
+
+interface TaskCommentModalContext {
+  phase: ProjectPhase;
+  subPhase: ProjectTask | null;
+  task: ProjectTask;
+}
+
+type ProjectStatusActionType = "concluido" | "cancelado";
+
+interface ProjectStatusModalContext {
+  project: ProjectListItem;
+  nextStatus: ProjectStatusActionType;
 }
 
 type PlannerTaskMeta =
@@ -317,11 +387,16 @@ interface PlanningProgressSummary {
   taskPercentByID: Record<string, number>;
 }
 
+interface FlattenedTaskComment {
+  comment: ProjectTaskComment;
+  depth: number;
+}
+
 const submenuItems: Array<{ key: SubmenuKey; label: string; icon: string }> = [
   { key: "projetos", label: "Projetos", icon: "workspaces" },
-  { key: "tipos", label: "Tipos", icon: "category" },
   { key: "receitas", label: "Receitas", icon: "payments" },
   { key: "cobrancas", label: "Cobranças", icon: "receipt_long" },
+  { key: "tipos", label: "Tipos", icon: "category" },
 ];
 
 const taskStatusOptions: Array<{ value: string; label: string }> = [
@@ -335,12 +410,32 @@ const wideModalClassNames = {
   base: "min-w-[80vw]",
 } as const;
 
+const projectModalClassNames = {
+  base: "min-w-[90vw] sm:min-w-[40vw] sm:max-w-[40vw]",
+} as const;
+
+const projectTypeModalClassNames = {
+  base: "min-w-[56vw]",
+} as const;
+
+const revenueModalClassNames = {
+  base: "min-w-[36vw] max-h-[90vh]",
+} as const;
+
+const chargeModalClassNames = {
+  base: "min-w-[39.2vw]",
+} as const;
+
 const phaseModalClassNames = {
   base: "min-w-[90vw] sm:min-w-[60vw] sm:max-w-[60vw] lg:min-w-[40vw] lg:max-w-[40vw]",
 } as const;
 
 const veryWideTaskModalClassNames = {
   base: "min-w-[50vw] max-w-[56vw]",
+} as const;
+
+const taskCreateModalClassNames = {
+  base: "min-w-[90vw] sm:min-w-[40vw] sm:max-w-[40vw]",
 } as const;
 
 function createEmptyProjectForm(): ProjectFormData {
@@ -354,6 +449,7 @@ function createEmptyProjectForm(): ProjectFormData {
     endDate: "",
     active: true,
     clientIds: [],
+    managerUserIds: [],
   };
 }
 
@@ -376,17 +472,8 @@ function createEmptyRevenueForm(projectId: string): RevenueFormData {
     amount: "",
     expectedOn: "",
     receivedOn: "",
-    status: "pendente",
     active: true,
-    receipts: [
-      {
-        fileName: "",
-        fileKey: "",
-        contentType: "",
-        issuedOn: "",
-        notes: "",
-      },
-    ],
+    receipts: [],
   };
 }
 
@@ -395,6 +482,8 @@ function createEmptyChargeForm(projectId: string): ChargeFormData {
     projectId,
     title: "",
     description: "",
+    installment: "",
+    status: "pendente",
     amount: "",
     dueDay: "1",
     startsOn: "",
@@ -428,6 +517,15 @@ function createEmptyTaskForm(): TaskFormData {
     startsOn: "",
     endsOn: "",
     status: "planejada",
+    responsibleUserId: "",
+  };
+}
+
+function createEmptyTaskCommentForm(): TaskCommentFormData {
+  return {
+    comment: "",
+    parentCommentId: "",
+    files: [],
   };
 }
 
@@ -453,6 +551,18 @@ function extractFileNameFromContentDisposition(headerValue: string | null): stri
   return null;
 }
 
+function isRevenueReceiptImage(receipt: ProjectRevenueReceipt): boolean {
+  const normalizedContentType = (receipt.contentType || "").trim().toLowerCase();
+  if (normalizedContentType.startsWith("image/")) {
+    return true;
+  }
+
+  const source = `${receipt.fileName || ""} ${receipt.fileKey || ""}`.toLowerCase();
+  return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"].some((extension) =>
+    source.includes(extension),
+  );
+}
+
 export default function ProjetosPage() {
   const [activeMenu, setActiveMenu] = useState<SubmenuKey>("projetos");
 
@@ -460,6 +570,7 @@ export default function ProjetosPage() {
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([]);
   const [projectTypes, setProjectTypes] = useState<ProjectType[]>([]);
   const [clients, setClients] = useState<ClientSummary[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -472,6 +583,12 @@ export default function ProjetosPage() {
   const [editingProjectID, setEditingProjectID] = useState<string | null>(null);
   const [isLoadingProjectModal, setIsLoadingProjectModal] = useState(false);
   const [isSavingProject, setIsSavingProject] = useState(false);
+  const [projectManagerSearchValue, setProjectManagerSearchValue] = useState("");
+  const [isProjectStatusModalOpen, setIsProjectStatusModalOpen] = useState(false);
+  const [projectStatusModalContext, setProjectStatusModalContext] =
+    useState<ProjectStatusModalContext | null>(null);
+  const [projectStatusModalError, setProjectStatusModalError] = useState<string | null>(null);
+  const [isUpdatingProjectStatus, setIsUpdatingProjectStatus] = useState(false);
 
   const [isProjectTypeModalOpen, setIsProjectTypeModalOpen] = useState(false);
   const [projectTypeForm, setProjectTypeForm] = useState<ProjectTypeFormData>(
@@ -479,8 +596,11 @@ export default function ProjetosPage() {
   );
   const [projectTypeFormError, setProjectTypeFormError] = useState<string | null>(null);
   const [isSavingProjectType, setIsSavingProjectType] = useState(false);
+  const [updatingProjectTypeID, setUpdatingProjectTypeID] = useState<string | null>(null);
 
   const [selectedRevenueProjectId, setSelectedRevenueProjectId] = useState("");
+  const [revenueProjectSearchValue, setRevenueProjectSearchValue] = useState("");
+  const [isRevenueProjectSearchOpen, setIsRevenueProjectSearchOpen] = useState(false);
   const [revenues, setRevenues] = useState<ProjectRevenue[]>([]);
   const [isLoadingRevenues, setIsLoadingRevenues] = useState(false);
 
@@ -488,8 +608,18 @@ export default function ProjetosPage() {
   const [revenueForm, setRevenueForm] = useState<RevenueFormData>(createEmptyRevenueForm(""));
   const [revenueFormError, setRevenueFormError] = useState<string | null>(null);
   const [isSavingRevenue, setIsSavingRevenue] = useState(false);
+  const [isRevenueCancelModalOpen, setIsRevenueCancelModalOpen] = useState(false);
+  const [revenueToCancel, setRevenueToCancel] = useState<ProjectRevenue | null>(null);
+  const [revenueCancelError, setRevenueCancelError] = useState<string | null>(null);
+  const [isCancellingRevenue, setIsCancellingRevenue] = useState(false);
+  const [isRevenueReceiptModalOpen, setIsRevenueReceiptModalOpen] = useState(false);
+  const [selectedRevenueReceipt, setSelectedRevenueReceipt] =
+    useState<ProjectRevenueReceipt | null>(null);
+  const revenueReceiptFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedChargeProjectId, setSelectedChargeProjectId] = useState("");
+  const [chargeProjectSearchValue, setChargeProjectSearchValue] = useState("");
+  const [isChargeProjectSearchOpen, setIsChargeProjectSearchOpen] = useState(false);
   const [monthlyCharges, setMonthlyCharges] = useState<ProjectMonthlyCharge[]>([]);
   const [isLoadingCharges, setIsLoadingCharges] = useState(false);
 
@@ -497,6 +627,18 @@ export default function ProjetosPage() {
   const [chargeForm, setChargeForm] = useState<ChargeFormData>(createEmptyChargeForm(""));
   const [chargeFormError, setChargeFormError] = useState<string | null>(null);
   const [isSavingCharge, setIsSavingCharge] = useState(false);
+  const [editingChargeID, setEditingChargeID] = useState<string | null>(null);
+  const [updatingChargeStatusID, setUpdatingChargeStatusID] = useState<string | null>(null);
+  const [chargeActionsError, setChargeActionsError] = useState<string | null>(null);
+  const [isChargeAmountModalOpen, setIsChargeAmountModalOpen] = useState(false);
+  const [editingCharge, setEditingCharge] = useState<ProjectMonthlyCharge | null>(null);
+  const [chargeAmountFormValue, setChargeAmountFormValue] = useState("");
+  const [chargeAmountFormError, setChargeAmountFormError] = useState<string | null>(null);
+  const [isSavingChargeAmount, setIsSavingChargeAmount] = useState(false);
+  const [isChargeDeleteModalOpen, setIsChargeDeleteModalOpen] = useState(false);
+  const [chargeToDelete, setChargeToDelete] = useState<ProjectMonthlyCharge | null>(null);
+  const [chargeDeleteError, setChargeDeleteError] = useState<string | null>(null);
+  const [isDeletingCharge, setIsDeletingCharge] = useState(false);
 
   const [isRoadmapModalOpen, setIsRoadmapModalOpen] = useState(false);
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false);
@@ -531,19 +673,48 @@ export default function ProjetosPage() {
   const [editingPhase, setEditingPhase] = useState<ProjectPhase | null>(null);
   const [editingSubPhase, setEditingSubPhase] = useState<ProjectTask | null>(null);
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
+  const [isTaskCommentsModalOpen, setIsTaskCommentsModalOpen] = useState(false);
+  const [taskCommentModalContext, setTaskCommentModalContext] =
+    useState<TaskCommentModalContext | null>(null);
+  const [taskComments, setTaskComments] = useState<ProjectTaskComment[]>([]);
+  const [isLoadingTaskComments, setIsLoadingTaskComments] = useState(false);
+  const [taskCommentsError, setTaskCommentsError] = useState<string | null>(null);
+  const [taskCommentForm, setTaskCommentForm] = useState<TaskCommentFormData>(
+    createEmptyTaskCommentForm(),
+  );
+  const [taskCommentFormError, setTaskCommentFormError] = useState<string | null>(null);
+  const [isSavingTaskComment, setIsSavingTaskComment] = useState(false);
+  const taskCommentFileInputRef = useRef<HTMLInputElement | null>(null);
+  const taskCommentTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const filteredProjects = useMemo(() => {
-    const normalizedSearch = searchValue.trim().toLowerCase();
-    if (!normalizedSearch) {
-      return projects;
-    }
+  const filteredProjects = useMemo(
+    () => filterProjectsBySearch(projects, searchValue),
+    [projects, searchValue],
+  );
+  const filteredProjectManagerUsers = useMemo(
+    () => filterUsersBySearch(users, projectManagerSearchValue),
+    [users, projectManagerSearchValue],
+  );
 
-    return projects.filter((project) =>
-      [project.name, project.objective, project.projectTypeName, project.projectCategoryName]
-        .map((value) => (value || "").toLowerCase())
-        .some((value) => value.includes(normalizedSearch)),
-    );
-  }, [projects, searchValue]);
+  const selectedRevenueProject = useMemo(
+    () => projects.find((project) => project.id === selectedRevenueProjectId) || null,
+    [projects, selectedRevenueProjectId],
+  );
+
+  const selectedChargeProject = useMemo(
+    () => projects.find((project) => project.id === selectedChargeProjectId) || null,
+    [projects, selectedChargeProjectId],
+  );
+
+  const revenueProjectSearchResults = useMemo(
+    () => filterProjectsBySearch(projects, revenueProjectSearchValue),
+    [projects, revenueProjectSearchValue],
+  );
+
+  const chargeProjectSearchResults = useMemo(
+    () => filterProjectsBySearch(projects, chargeProjectSearchValue),
+    [projects, chargeProjectSearchValue],
+  );
 
   const planningProgress = useMemo(
     () => calculatePlanningProgress(roadmapProject),
@@ -552,6 +723,14 @@ export default function ProjetosPage() {
   const planningRows = useMemo(
     () => buildPlanningRows(roadmapProject, planningProgress),
     [planningProgress, roadmapProject],
+  );
+  const flattenedTaskComments = useMemo(
+    () => flattenTaskComments(taskComments),
+    [taskComments],
+  );
+  const replyTargetComment = useMemo(
+    () => taskComments.find((comment) => comment.id === taskCommentForm.parentCommentId) || null,
+    [taskComments, taskCommentForm.parentCommentId],
   );
 
   const resetExportPdfPreview = () => {
@@ -595,6 +774,26 @@ export default function ProjetosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChargeProjectId]);
 
+  useEffect(() => {
+    if (!selectedRevenueProjectId) {
+      setRevenueProjectSearchValue("");
+      return;
+    }
+
+    const selectedProject = projects.find((project) => project.id === selectedRevenueProjectId);
+    setRevenueProjectSearchValue(selectedProject?.name || "");
+  }, [projects, selectedRevenueProjectId]);
+
+  useEffect(() => {
+    if (!selectedChargeProjectId) {
+      setChargeProjectSearchValue("");
+      return;
+    }
+
+    const selectedProject = projects.find((project) => project.id === selectedChargeProjectId);
+    setChargeProjectSearchValue(selectedProject?.name || "");
+  }, [projects, selectedChargeProjectId]);
+
   const loadInitialData = async () => {
     const token = readTokenFromCookie();
     if (!token) {
@@ -611,6 +810,7 @@ export default function ProjetosPage() {
         loadProjects(token),
         loadProjectTypesAndCategories(token),
         loadClients(token),
+        loadUsers(token),
       ]);
 
       const firstProjectId = projectsData[0]?.id || "";
@@ -707,6 +907,23 @@ export default function ProjetosPage() {
 
     const clientsData = Array.isArray(payload) ? payload : [];
     setClients(clientsData);
+  };
+
+  const loadUsers = async (token: string) => {
+    const response = await fetch(`${adminBackendUrl}/users/active`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = (await response.json()) as UserSummary[] | ApiError;
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(payload, "Não foi possível carregar usuários."));
+    }
+
+    const usersData = Array.isArray(payload) ? payload : [];
+    setUsers(usersData);
   };
 
   const loadProjectRevenues = async (projectId: string) => {
@@ -970,6 +1187,7 @@ export default function ProjetosPage() {
     setEditingProjectID(null);
     setProjectForm(createEmptyProjectForm());
     setProjectFormError(null);
+    setProjectManagerSearchValue("");
     setIsProjectModalOpen(true);
   };
 
@@ -980,8 +1198,14 @@ export default function ProjetosPage() {
       return;
     }
 
+    const listedProject = projects.find((project) => project.id === projectID) || null;
+
     setEditingProjectID(null);
-    setProjectForm(createEmptyProjectForm());
+    setProjectForm({
+      ...createEmptyProjectForm(),
+      name: listedProject?.name || "",
+      objective: listedProject?.objective || "",
+    });
     setIsLoadingProjectModal(true);
     setProjectFormError(null);
     setIsProjectModalOpen(true);
@@ -1009,7 +1233,7 @@ export default function ProjetosPage() {
       setEditingProjectID(payload.id);
       setProjectForm({
         name: payload.name || "",
-        objective: payload.objective || "",
+        objective: payload.objective || listedProject?.objective || "",
         projectTypeId: payload.projectTypeId || "",
         lifecycleType:
           payload.lifecycleType === "recorrente" ? "recorrente" : "temporario",
@@ -1018,7 +1242,9 @@ export default function ProjetosPage() {
         endDate: toDateInputValue(payload.endDate),
         active: Boolean(payload.active),
         clientIds: payload.clients.map((client) => client.clientId),
+        managerUserIds: (payload.managers || []).map((manager) => manager.userId),
       });
+      setProjectManagerSearchValue("");
       setIsProjectModalOpen(true);
     } catch {
       setProjectFormError("Falha de conexão com a API.");
@@ -1085,6 +1311,76 @@ export default function ProjetosPage() {
     }
   };
 
+  const openProjectStatusModal = (
+    project: ProjectListItem,
+    nextStatus: ProjectStatusActionType,
+  ) => {
+    const currentStatus = normalizeProjectStatusValue(project.status, project.active);
+    if (currentStatus === nextStatus) {
+      return;
+    }
+
+    setProjectStatusModalError(null);
+    setProjectStatusModalContext({ project, nextStatus });
+    setIsProjectStatusModalOpen(true);
+  };
+
+  const closeProjectStatusModal = () => {
+    setIsProjectStatusModalOpen(false);
+    setProjectStatusModalContext(null);
+    setProjectStatusModalError(null);
+  };
+
+  const handleUpdateProjectStatus = async () => {
+    if (!projectStatusModalContext) {
+      return;
+    }
+
+    const { project, nextStatus } = projectStatusModalContext;
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setProjectStatusModalError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setError(null);
+    setProjectStatusModalError(null);
+    setIsUpdatingProjectStatus(true);
+
+    try {
+      const response = await fetch(`${adminBackendUrl}/projects/${project.id}/status`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+        }),
+      });
+
+      const payload = (await response.json()) as ProjectDetail | ApiError;
+      if (!response.ok) {
+        setProjectStatusModalError(
+          getApiErrorMessage(payload, "Não foi possível atualizar o status do projeto."),
+        );
+        return;
+      }
+
+      if (roadmapProject?.id === project.id) {
+        await loadProjectDetail(project.id);
+      }
+
+      await loadInitialData();
+      closeProjectStatusModal();
+    } catch {
+      setProjectStatusModalError("Falha de conexão com a API.");
+    } finally {
+      setIsUpdatingProjectStatus(false);
+    }
+  };
+
   const openProjectTypeModal = () => {
     setProjectTypeForm({
       ...createEmptyProjectTypeForm(),
@@ -1094,16 +1390,382 @@ export default function ProjetosPage() {
     setIsProjectTypeModalOpen(true);
   };
 
+  const handleDeactivateProjectType = async (projectType: ProjectType) => {
+    if (!projectType.active) {
+      return;
+    }
+
+    const shouldDeactivate = window.confirm(
+      `Deseja desativar o tipo de projeto "${projectType.name}"?`,
+    );
+    if (!shouldDeactivate) {
+      return;
+    }
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setError(null);
+    setUpdatingProjectTypeID(projectType.id);
+
+    try {
+      const response = await fetch(`${adminBackendUrl}/project-types/${projectType.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          categoryId: projectType.categoryId,
+          code: projectType.code,
+          name: projectType.name,
+          description: projectType.description,
+          active: false,
+        }),
+      });
+
+      const payload = (await response.json()) as ProjectType | ApiError;
+      if (!response.ok) {
+        setError(getApiErrorMessage(payload, "Não foi possível desativar o tipo de projeto."));
+        return;
+      }
+
+      await loadProjectTypesAndCategories(token);
+    } catch {
+      setError("Falha de conexão com a API.");
+    } finally {
+      setUpdatingProjectTypeID(null);
+    }
+  };
+
   const openRevenueModal = () => {
     setRevenueForm(createEmptyRevenueForm(selectedRevenueProjectId));
     setRevenueFormError(null);
     setIsRevenueModalOpen(true);
   };
 
-  const openChargeModal = () => {
-    setChargeForm(createEmptyChargeForm(selectedChargeProjectId));
+  const selectRevenueProject = (project: ProjectListItem) => {
+    setSelectedRevenueProjectId(project.id);
+    setRevenueProjectSearchValue(project.name);
+    setIsRevenueProjectSearchOpen(false);
+  };
+
+  const handleRevenueProjectSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const firstMatch = revenueProjectSearchResults[0];
+    if (!firstMatch) {
+      return;
+    }
+
+    selectRevenueProject(firstMatch);
+  };
+
+  const selectChargeProject = (project: ProjectListItem) => {
+    setSelectedChargeProjectId(project.id);
+    setChargeProjectSearchValue(project.name);
+    setIsChargeProjectSearchOpen(false);
+  };
+
+  const handleChargeProjectSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const firstMatch = chargeProjectSearchResults[0];
+    if (!firstMatch) {
+      return;
+    }
+
+    selectChargeProject(firstMatch);
+  };
+
+  const openRevenueCancelModal = (revenue: ProjectRevenue) => {
+    setRevenueToCancel(revenue);
+    setRevenueCancelError(null);
+    setIsRevenueCancelModalOpen(true);
+  };
+
+  const closeRevenueCancelModal = () => {
+    setIsRevenueCancelModalOpen(false);
+    setRevenueToCancel(null);
+    setRevenueCancelError(null);
+  };
+
+  const openRevenueReceiptModal = (receipt: ProjectRevenueReceipt) => {
+    setSelectedRevenueReceipt(receipt);
+    setIsRevenueReceiptModalOpen(true);
+  };
+
+  const closeRevenueReceiptModal = () => {
+    setIsRevenueReceiptModalOpen(false);
+    setSelectedRevenueReceipt(null);
+  };
+
+  const handleCancelRevenue = async () => {
+    if (!revenueToCancel) {
+      return;
+    }
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setRevenueCancelError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setRevenueCancelError(null);
+    setIsCancellingRevenue(true);
+    const revenue = revenueToCancel;
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${revenue.projectId}/revenues/${revenue.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status: "cancelado",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        let payload: ApiError | undefined;
+        try {
+          payload = (await response.json()) as ApiError;
+        } catch {
+          payload = undefined;
+        }
+
+        setRevenueCancelError(
+          getApiErrorMessage(payload, "Não foi possível cancelar a receita."),
+        );
+        return;
+      }
+
+      closeRevenueCancelModal();
+      await loadProjectRevenues(revenue.projectId);
+    } catch {
+      setRevenueCancelError("Falha de conexão com a API.");
+    } finally {
+      setIsCancellingRevenue(false);
+    }
+  };
+
+  const buildRevenueReceiptFromFile = (file: File): RevenueReceiptFormData => ({
+    fileName: file.name,
+    fileKey: file.name,
+    contentType: file.type || "",
+    issuedOn: "",
+    notes: "",
+  });
+
+  const setRevenueReceiptFile = (file: File) => {
+    setRevenueForm((currentForm) => ({
+      ...currentForm,
+      receipts: [buildRevenueReceiptFromFile(file)],
+    }));
+  };
+
+  const clearRevenueReceiptFile = () => {
+    setRevenueForm((currentForm) => ({
+      ...currentForm,
+      receipts: [],
+    }));
+    if (revenueReceiptFileInputRef.current) {
+      revenueReceiptFileInputRef.current.value = "";
+    }
+  };
+
+  const handleRevenueReceiptFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setRevenueReceiptFile(file);
+    event.target.value = "";
+  };
+
+  const handleRevenueReceiptDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (!file) {
+      return;
+    }
+    setRevenueReceiptFile(file);
+  };
+
+  const handleRevenueReceiptPaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const file = event.clipboardData.files?.[0];
+    if (!file) {
+      return;
+    }
+    event.preventDefault();
+    setRevenueReceiptFile(file);
+  };
+
+  const handleRevenueReceiptAreaKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    revenueReceiptFileInputRef.current?.click();
+  };
+
+  const openChargeModal = (chargeToEdit: ProjectMonthlyCharge | null = null) => {
+    if (
+      chargeToEdit &&
+      normalizeMonthlyChargeStatusValue(chargeToEdit.status) !== "pendente"
+    ) {
+      setChargeActionsError("Cobranças pagas ou canceladas não podem ser editadas.");
+      return;
+    }
+
+    if (chargeToEdit) {
+      setEditingChargeID(chargeToEdit.id);
+      setChargeForm({
+        projectId: chargeToEdit.projectId,
+        title: chargeToEdit.title || "",
+        description: chargeToEdit.description || "",
+        installment: chargeToEdit.installment || "",
+        status: normalizeMonthlyChargeStatusValue(chargeToEdit.status),
+        amount: chargeToEdit.amount.toFixed(2),
+        dueDay: String(chargeToEdit.dueDay || 1),
+        startsOn: toDateInputValue(chargeToEdit.startsOn),
+        endsOn: toDateInputValue(chargeToEdit.endsOn),
+        active: chargeToEdit.active,
+      });
+    } else {
+      setEditingChargeID(null);
+      setChargeForm(createEmptyChargeForm(selectedChargeProjectId));
+    }
     setChargeFormError(null);
+    setChargeActionsError(null);
     setIsChargeModalOpen(true);
+  };
+
+  const handleUpdateChargeStatus = async (
+    charge: ProjectMonthlyCharge,
+    nextStatus: "pago" | "cancelada",
+  ) => {
+    const token = readTokenFromCookie();
+    if (!token) {
+      setChargeActionsError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setChargeActionsError(null);
+    setUpdatingChargeStatusID(charge.id);
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${charge.projectId}/monthly-charges/${charge.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            status: nextStatus,
+          }),
+        },
+      );
+
+      const payload = (await response.json()) as ProjectMonthlyCharge | ApiError;
+      if (!response.ok) {
+        setChargeActionsError(
+          getApiErrorMessage(payload, "Não foi possível atualizar o status da cobrança."),
+        );
+        return;
+      }
+
+      await loadProjectMonthlyCharges(charge.projectId);
+    } catch {
+      setChargeActionsError("Falha de conexão com a API.");
+    } finally {
+      setUpdatingChargeStatusID(null);
+    }
+  };
+
+  const openChargeAmountModal = (charge: ProjectMonthlyCharge) => {
+    if (normalizeMonthlyChargeStatusValue(charge.status) !== "pendente") {
+      setChargeActionsError("Cobranças pagas ou canceladas não podem ser editadas.");
+      return;
+    }
+
+    setEditingCharge(charge);
+    setChargeAmountFormValue(charge.amount.toFixed(2));
+    setChargeAmountFormError(null);
+    setIsChargeAmountModalOpen(true);
+  };
+
+  const openChargeDeleteModal = (charge: ProjectMonthlyCharge) => {
+    setChargeToDelete(charge);
+    setChargeDeleteError(null);
+    setChargeActionsError(null);
+    setIsChargeDeleteModalOpen(true);
+  };
+
+  const closeChargeDeleteModal = () => {
+    setIsChargeDeleteModalOpen(false);
+    setChargeToDelete(null);
+    setChargeDeleteError(null);
+  };
+
+  const handleDeleteCharge = async () => {
+    if (!chargeToDelete) {
+      return;
+    }
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setChargeDeleteError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setChargeDeleteError(null);
+    setChargeActionsError(null);
+    setIsDeletingCharge(true);
+    const charge = chargeToDelete;
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${charge.projectId}/monthly-charges/${charge.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        let payload: ApiError | undefined;
+        try {
+          payload = (await response.json()) as ApiError;
+        } catch {
+          payload = undefined;
+        }
+
+        const message = getApiErrorMessage(payload, "Não foi possível excluir a cobrança.");
+        setChargeDeleteError(message);
+        setChargeActionsError(message);
+        return;
+      }
+
+      closeChargeDeleteModal();
+      await loadProjects(token);
+      await loadProjectMonthlyCharges(charge.projectId);
+    } catch {
+      setChargeDeleteError("Falha de conexão com a API.");
+    } finally {
+      setIsDeletingCharge(false);
+    }
   };
 
   const openRoadmapModal = async (projectId: string) => {
@@ -1116,6 +1778,7 @@ export default function ProjetosPage() {
     setIsPhaseModalOpen(false);
     setIsSubPhaseModalOpen(false);
     setIsTaskModalOpen(false);
+    closeTaskCommentsModal();
     setPhaseForm(createEmptyPhaseForm());
     setSubPhaseForm(createEmptySubPhaseForm());
     setTaskForm(createEmptyTaskForm());
@@ -1183,6 +1846,7 @@ export default function ProjetosPage() {
         startsOn: toDateInputValue(taskToEdit.startsOn),
         endsOn: toDateInputValue(taskToEdit.endsOn),
         status: normalizeTaskStatusValue(taskToEdit.status),
+        responsibleUserId: taskToEdit.responsibleUserId || "",
       });
     } else {
       setEditingTask(null);
@@ -1230,6 +1894,7 @@ export default function ProjetosPage() {
             endDate: projectForm.endDate,
             active: projectForm.active,
             clientIds: projectForm.clientIds,
+            managerUserIds: projectForm.managerUserIds,
           }),
         },
       );
@@ -1345,7 +2010,6 @@ export default function ProjetosPage() {
             amount,
             expectedOn: revenueForm.expectedOn,
             receivedOn: revenueForm.receivedOn,
-            status: revenueForm.status,
             active: revenueForm.active,
             receipts: revenueForm.receipts,
           }),
@@ -1381,9 +2045,12 @@ export default function ProjetosPage() {
 
     const amount = Number.parseFloat(chargeForm.amount.replace(",", "."));
     const dueDay = Number.parseInt(chargeForm.dueDay, 10);
+    if (!chargeForm.title.trim()) {
+      setChargeFormError("Informe o título da cobrança.");
+      return;
+    }
     if (
       !chargeForm.projectId ||
-      !chargeForm.title.trim() ||
       Number.isNaN(amount) ||
       Number.isNaN(dueDay)
     ) {
@@ -1395,10 +2062,13 @@ export default function ProjetosPage() {
     setIsSavingCharge(true);
 
     try {
+      const isEditingCharge = Boolean(editingChargeID);
       const response = await fetch(
-        `${adminBackendUrl}/projects/${chargeForm.projectId}/monthly-charges`,
+        isEditingCharge
+          ? `${adminBackendUrl}/projects/${chargeForm.projectId}/monthly-charges/${editingChargeID}`
+          : `${adminBackendUrl}/projects/${chargeForm.projectId}/monthly-charges`,
         {
-          method: "POST",
+          method: isEditingCharge ? "PATCH" : "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -1406,6 +2076,8 @@ export default function ProjetosPage() {
           body: JSON.stringify({
             title: chargeForm.title,
             description: chargeForm.description,
+            installment: chargeForm.installment,
+            status: chargeForm.status,
             amount,
             dueDay,
             startsOn: chargeForm.startsOn,
@@ -1418,18 +2090,80 @@ export default function ProjetosPage() {
       const payload = (await response.json()) as ProjectMonthlyCharge | ApiError;
       if (!response.ok) {
         setChargeFormError(
-          getApiErrorMessage(payload, "Não foi possível salvar a cobrança."),
+          getApiErrorMessage(
+            payload,
+            isEditingCharge
+              ? "Não foi possível atualizar a cobrança."
+              : "Não foi possível salvar a cobrança.",
+          ),
         );
         return;
       }
 
       setIsChargeModalOpen(false);
+      setEditingChargeID(null);
       await loadProjects(token);
       await loadProjectMonthlyCharges(chargeForm.projectId);
     } catch {
       setChargeFormError("Falha de conexão com a API.");
     } finally {
       setIsSavingCharge(false);
+    }
+  };
+
+  const handleSubmitChargeAmount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!editingCharge) {
+      return;
+    }
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setChargeAmountFormError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    const amount = Number.parseFloat(chargeAmountFormValue.replace(",", "."));
+    if (Number.isNaN(amount) || amount < 0) {
+      setChargeAmountFormError("Informe um valor válido.");
+      return;
+    }
+
+    setChargeAmountFormError(null);
+    setIsSavingChargeAmount(true);
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${editingCharge.projectId}/monthly-charges/${editingCharge.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            amount,
+          }),
+        },
+      );
+
+      const payload = (await response.json()) as ProjectMonthlyCharge | ApiError;
+      if (!response.ok) {
+        setChargeAmountFormError(
+          getApiErrorMessage(payload, "Não foi possível atualizar o valor da cobrança."),
+        );
+        return;
+      }
+
+      setIsChargeAmountModalOpen(false);
+      setEditingCharge(null);
+      setChargeAmountFormValue("");
+      await loadProjectMonthlyCharges(editingCharge.projectId);
+    } catch {
+      setChargeAmountFormError("Falha de conexão com a API.");
+    } finally {
+      setIsSavingChargeAmount(false);
     }
   };
 
@@ -1620,6 +2354,7 @@ export default function ProjetosPage() {
               endsOn: taskForm.endsOn,
               position: editingTask.position,
               status: taskForm.status,
+              responsibleUserId: taskForm.responsibleUserId,
               active: editingTask.active,
             }),
           },
@@ -1648,6 +2383,7 @@ export default function ProjetosPage() {
             endsOn: taskForm.endsOn,
             position: phaseTaskCount,
             status: taskForm.status,
+            responsibleUserId: taskForm.responsibleUserId,
             active: true,
             files: [],
           }),
@@ -1676,6 +2412,208 @@ export default function ProjetosPage() {
       setTaskFormError("Falha de conexão com a API.");
     } finally {
       setIsSavingTask(false);
+    }
+  };
+
+  const loadTaskComments = async (projectId: string, taskId: string) => {
+    const token = readTokenFromCookie();
+    if (!token) {
+      setTaskCommentsError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setIsLoadingTaskComments(true);
+    setTaskCommentsError(null);
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${projectId}/tasks/${taskId}/comments`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      const payload = (await response.json()) as ProjectTaskComment[] | ApiError;
+      if (!response.ok) {
+        setTaskCommentsError(
+          getApiErrorMessage(payload, "Não foi possível carregar os comentários da tarefa."),
+        );
+        return;
+      }
+
+      setTaskComments(Array.isArray(payload) ? payload : []);
+    } catch {
+      setTaskCommentsError("Falha de conexão com a API.");
+    } finally {
+      setIsLoadingTaskComments(false);
+    }
+  };
+
+  const openTaskCommentsModal = (phase: ProjectPhase, subPhase: ProjectTask | null, task: ProjectTask) => {
+    if (!roadmapProject?.id) {
+      return;
+    }
+
+    setTaskCommentModalContext({ phase, subPhase, task });
+    setTaskComments([]);
+    setTaskCommentsError(null);
+    setTaskCommentForm(createEmptyTaskCommentForm());
+    setTaskCommentFormError(null);
+    setIsTaskCommentsModalOpen(true);
+    void loadTaskComments(roadmapProject.id, task.id);
+  };
+
+  const closeTaskCommentsModal = () => {
+    setIsTaskCommentsModalOpen(false);
+    setTaskCommentModalContext(null);
+    setTaskComments([]);
+    setTaskCommentsError(null);
+    setTaskCommentForm(createEmptyTaskCommentForm());
+    setTaskCommentFormError(null);
+    setIsSavingTaskComment(false);
+    if (taskCommentFileInputRef.current) {
+      taskCommentFileInputRef.current.value = "";
+    }
+  };
+
+  const buildTaskCommentFileFromFile = (file: File): RevenueReceiptFormData => ({
+    fileName: file.name,
+    fileKey: file.name,
+    contentType: file.type || "",
+    issuedOn: "",
+    notes: "",
+  });
+
+  const setTaskCommentFile = (file: File) => {
+    setTaskCommentForm((currentForm) => ({
+      ...currentForm,
+      files: [buildTaskCommentFileFromFile(file)],
+    }));
+  };
+
+  const clearTaskCommentFile = () => {
+    setTaskCommentForm((currentForm) => ({
+      ...currentForm,
+      files: [],
+    }));
+    if (taskCommentFileInputRef.current) {
+      taskCommentFileInputRef.current.value = "";
+    }
+  };
+
+  const handleTaskCommentFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setTaskCommentFile(file);
+    event.target.value = "";
+  };
+
+  const handleTaskCommentDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (!file) {
+      return;
+    }
+    setTaskCommentFile(file);
+  };
+
+  const handleTaskCommentPaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const file = event.clipboardData.files?.[0];
+    if (!file) {
+      return;
+    }
+    event.preventDefault();
+    setTaskCommentFile(file);
+  };
+
+  const handleTaskCommentAreaKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    taskCommentFileInputRef.current?.click();
+  };
+
+  const handleStartReplyToComment = (comment: ProjectTaskComment) => {
+    setTaskCommentForm((currentForm) => ({
+      ...currentForm,
+      parentCommentId: comment.id,
+    }));
+    taskCommentTextareaRef.current?.focus();
+  };
+
+  const handleClearReplyTarget = () => {
+    setTaskCommentForm((currentForm) => ({
+      ...currentForm,
+      parentCommentId: "",
+    }));
+  };
+
+  const handleSubmitTaskComment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!roadmapProject?.id || !taskCommentModalContext?.task.id) {
+      return;
+    }
+
+    const token = readTokenFromCookie();
+    if (!token) {
+      setTaskCommentFormError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    if (!taskCommentForm.comment.trim()) {
+      setTaskCommentFormError("Informe o comentário da tarefa.");
+      return;
+    }
+
+    setTaskCommentFormError(null);
+    setIsSavingTaskComment(true);
+
+    try {
+      const response = await fetch(
+        `${adminBackendUrl}/projects/${roadmapProject.id}/tasks/${taskCommentModalContext.task.id}/comments`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            parentCommentId: taskCommentForm.parentCommentId,
+            comment: taskCommentForm.comment,
+            files: taskCommentForm.files.map((file) => ({
+              fileName: file.fileName,
+              fileKey: file.fileKey,
+              contentType: file.contentType,
+              notes: file.notes,
+            })),
+          }),
+        },
+      );
+
+      const payload = (await response.json()) as ProjectTaskComment | ApiError;
+      if (!response.ok) {
+        setTaskCommentFormError(
+          getApiErrorMessage(payload, "Não foi possível salvar o comentário da tarefa."),
+        );
+        return;
+      }
+
+      setTaskCommentForm(createEmptyTaskCommentForm());
+      if (taskCommentFileInputRef.current) {
+        taskCommentFileInputRef.current.value = "";
+      }
+      await loadTaskComments(roadmapProject.id, taskCommentModalContext.task.id);
+    } catch {
+      setTaskCommentFormError("Falha de conexão com a API.");
+    } finally {
+      setIsSavingTaskComment(false);
     }
   };
 
@@ -1739,7 +2677,7 @@ export default function ProjetosPage() {
             <Button
               color="primary"
               startContent={<MaterialSymbol name="add" className="text-[18px]" />}
-              onPress={openChargeModal}
+              onPress={() => openChargeModal()}
               isDisabled={!selectedChargeProjectId}
             >
               Nova cobrança
@@ -1818,11 +2756,17 @@ export default function ProjetosPage() {
                 ) : null}
 
                 {!isLoading
-                  ? filteredProjects.map((project) => (
-                      <tr
-                        key={project.id}
-                        className="border-b border-default-200/70 last:border-b-0"
-                      >
+                  ? filteredProjects.map((project) => {
+                      const normalizedProjectStatus = normalizeProjectStatusValue(
+                        project.status,
+                        project.active,
+                      );
+
+                      return (
+                        <tr
+                          key={project.id}
+                          className="border-b border-default-200/70 last:border-b-0"
+                        >
                         <td className="px-4 py-3">
                           <p className="font-medium text-foreground">{project.name}</p>
                           <p className="max-w-[320px] text-xs text-foreground/70">
@@ -1855,17 +2799,15 @@ export default function ProjetosPage() {
                         <td className="px-4 py-3 text-foreground/80">
                           {formatDate(project.endDate)}
                         </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={
-                              project.active
-                                ? "rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-xs font-medium text-success"
-                                : "rounded-full border border-danger/40 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger"
-                            }
-                          >
-                            {project.active ? "Ativo" : "Inativo"}
-                          </span>
-                        </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getProjectStatusBadgeClassName(
+                                normalizedProjectStatus,
+                              )}`}
+                            >
+                              {formatProjectStatusLabel(normalizedProjectStatus)}
+                            </span>
+                          </td>
                         <td className="px-4 py-3 text-right">
                           <Dropdown placement="bottom-end">
                             <DropdownTrigger>
@@ -1890,6 +2832,14 @@ export default function ProjetosPage() {
                                   void openProjectEditModal(project.id);
                                   return;
                                 }
+                                if (action === "complete") {
+                                  openProjectStatusModal(project, "concluido");
+                                  return;
+                                }
+                                if (action === "cancel") {
+                                  openProjectStatusModal(project, "cancelado");
+                                  return;
+                                }
                                 if (action === "delete") {
                                   void handleDeleteProject(project);
                                 }
@@ -1912,6 +2862,29 @@ export default function ProjetosPage() {
                                 Editar projeto
                               </DropdownItem>
                               <DropdownItem
+                                key="complete"
+                                isDisabled={
+                                  normalizedProjectStatus === "concluido" ||
+                                  normalizedProjectStatus === "cancelado"
+                                }
+                                startContent={
+                                  <MaterialSymbol name="task_alt" className="text-[18px]" />
+                                }
+                              >
+                                Concluir
+                              </DropdownItem>
+                              <DropdownItem
+                                key="cancel"
+                                color="danger"
+                                className="text-danger"
+                                isDisabled={normalizedProjectStatus === "cancelado"}
+                                startContent={
+                                  <MaterialSymbol name="cancel" className="text-[18px]" />
+                                }
+                              >
+                                Cancelar
+                              </DropdownItem>
+                              <DropdownItem
                                 key="delete"
                                 color="danger"
                                 className="text-danger"
@@ -1924,8 +2897,9 @@ export default function ProjetosPage() {
                             </DropdownMenu>
                           </Dropdown>
                         </td>
-                      </tr>
-                    ))
+                        </tr>
+                      );
+                    })
                   : null}
               </tbody>
             </table>
@@ -1944,12 +2918,15 @@ export default function ProjetosPage() {
                   <th className="px-4 py-3 font-semibold text-foreground/80">Nome</th>
                   <th className="px-4 py-3 font-semibold text-foreground/80">Descrição</th>
                   <th className="px-4 py-3 font-semibold text-foreground/80">Status</th>
+                  <th className="px-4 py-3 text-right font-semibold text-foreground/80">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td className="px-4 py-6 text-foreground/70" colSpan={5}>
+                    <td className="px-4 py-6 text-foreground/70" colSpan={6}>
                       Carregando tipos de projeto...
                     </td>
                   </tr>
@@ -1957,7 +2934,7 @@ export default function ProjetosPage() {
 
                 {!isLoading && projectTypes.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-6 text-foreground/70" colSpan={5}>
+                    <td className="px-4 py-6 text-foreground/70" colSpan={6}>
                       Nenhum tipo de projeto cadastrado.
                     </td>
                   </tr>
@@ -1988,6 +2965,40 @@ export default function ProjetosPage() {
                             {projectType.active ? "Ativo" : "Inativo"}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-right">
+                          <Dropdown placement="bottom-end">
+                            <DropdownTrigger>
+                              <Button
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                aria-label={`Menu de ações do tipo ${projectType.name}`}
+                                isDisabled={updatingProjectTypeID === projectType.id}
+                              >
+                                <MaterialSymbol name="more_vert" className="text-[20px]" />
+                              </Button>
+                            </DropdownTrigger>
+                            <DropdownMenu
+                              aria-label={`Ações do tipo ${projectType.name}`}
+                              onAction={(key) => {
+                                if (String(key) === "deactivate") {
+                                  void handleDeactivateProjectType(projectType);
+                                }
+                              }}
+                            >
+                              <DropdownItem
+                                key="deactivate"
+                                color="danger"
+                                isDisabled={!projectType.active}
+                                startContent={
+                                  <MaterialSymbol name="block" className="text-[18px]" />
+                                }
+                              >
+                                Desativar
+                              </DropdownItem>
+                            </DropdownMenu>
+                          </Dropdown>
+                        </td>
                       </tr>
                     ))
                   : null}
@@ -2001,20 +3012,66 @@ export default function ProjetosPage() {
         <div className="space-y-3">
           <div className="rounded-2xl border border-default-200 bg-content1/70 p-4 backdrop-blur-md">
             <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
-              Projeto da receita
+              Pesquisar projeto (receitas)
             </label>
-            <select
-              value={selectedRevenueProjectId}
-              onChange={(event) => setSelectedRevenueProjectId(event.target.value)}
-              className="mt-2 h-10 w-full rounded-xl border border-default-200 bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
-            >
-              <option value="">Selecione um projeto</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <form className="mt-2 flex gap-2" onSubmit={handleRevenueProjectSearchSubmit}>
+              <Input
+                value={revenueProjectSearchValue}
+                onValueChange={(value) => {
+                  setRevenueProjectSearchValue(value);
+                  setIsRevenueProjectSearchOpen(true);
+                  if (!value.trim()) {
+                    setSelectedRevenueProjectId("");
+                  }
+                }}
+                onFocus={() => setIsRevenueProjectSearchOpen(true)}
+                placeholder="Digite o nome do projeto"
+                startContent={<MaterialSymbol name="search" className="text-[18px]" />}
+              />
+              <Button
+                type="submit"
+                variant="flat"
+                isDisabled={revenueProjectSearchResults.length === 0}
+              >
+                Buscar
+              </Button>
+            </form>
+
+            {selectedRevenueProject ? (
+              <p className="mt-2 text-xs text-foreground/70">
+                Selecionado: <strong>{selectedRevenueProject.name}</strong>
+              </p>
+            ) : null}
+
+            {isRevenueProjectSearchOpen ||
+            Boolean(revenueProjectSearchValue.trim()) ||
+            !selectedRevenueProjectId ? (
+              <div className="mt-3 max-h-44 overflow-y-auto rounded-xl border border-default-200 bg-content1/70">
+                {revenueProjectSearchResults.length > 0 ? (
+                  revenueProjectSearchResults.slice(0, 10).map((project) => (
+                    <button
+                      type="button"
+                      key={project.id}
+                      onClick={() => selectRevenueProject(project)}
+                      className={`flex w-full items-center justify-between gap-2 border-b border-default-200/70 px-3 py-2 text-left text-sm last:border-b-0 ${
+                        selectedRevenueProjectId === project.id
+                          ? "bg-primary/10 text-primary"
+                          : "text-foreground hover:bg-default-100/70"
+                      }`}
+                    >
+                      <span>{project.name}</span>
+                      <span className="text-xs text-foreground/60">
+                        {project.projectTypeName || "Sem tipo"}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-sm text-foreground/70">
+                    Nenhum projeto encontrado.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-default-200 bg-content1/70 backdrop-blur-md">
@@ -2030,12 +3087,15 @@ export default function ProjetosPage() {
                     <th className="px-4 py-3 font-semibold text-foreground/80">
                       Comprovantes
                     </th>
+                    <th className="px-4 py-3 text-right font-semibold text-foreground/80">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoadingRevenues ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={7}>
                         Carregando receitas...
                       </td>
                     </tr>
@@ -2043,7 +3103,7 @@ export default function ProjetosPage() {
 
                   {!isLoadingRevenues && selectedRevenueProjectId && revenues.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={7}>
                         Nenhuma receita cadastrada para o projeto selecionado.
                       </td>
                     </tr>
@@ -2051,7 +3111,7 @@ export default function ProjetosPage() {
 
                   {!isLoadingRevenues && !selectedRevenueProjectId ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={7}>
                         Selecione um projeto para visualizar as receitas.
                       </td>
                     </tr>
@@ -2067,7 +3127,9 @@ export default function ProjetosPage() {
                           <td className="px-4 py-3 text-foreground/80">
                             {formatCurrency(revenue.amount)}
                           </td>
-                          <td className="px-4 py-3 text-foreground/80">{revenue.status}</td>
+                          <td className="px-4 py-3 text-foreground/80">
+                            {formatRevenueStatusLabel(revenue.status)}
+                          </td>
                           <td className="px-4 py-3 text-foreground/80">
                             {formatDate(revenue.expectedOn)}
                           </td>
@@ -2075,7 +3137,88 @@ export default function ProjetosPage() {
                             {formatDate(revenue.receivedOn)}
                           </td>
                           <td className="px-4 py-3 text-foreground/80">
-                            {revenue.receipts.length}
+                            {revenue.receipts.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-2">
+                                {revenue.receipts.map((receipt, index) => {
+                                  const receiptKey = receipt.id || `${revenue.id}-receipt-${index}`;
+                                  const receiptLink = (receipt.fileKey || "").trim();
+                                  const receiptLabel =
+                                    (receipt.fileName || "").trim() || receiptLink || "-";
+                                  const isImageReceipt = isRevenueReceiptImage(receipt);
+
+                                  if (!receiptLink) {
+                                    return (
+                                      <Tooltip key={receiptKey} content={receiptLabel} placement="top">
+                                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-default-300 bg-default-100 text-foreground/70">
+                                          <MaterialSymbol name="description" className="text-[18px]" />
+                                        </span>
+                                      </Tooltip>
+                                    );
+                                  }
+
+                                  return (
+                                    <Tooltip key={receiptKey} content={receiptLabel} placement="top">
+                                      <button
+                                        type="button"
+                                        onClick={() => openRevenueReceiptModal(receipt)}
+                                        title={receiptLink}
+                                        className="group relative inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-default-300 bg-default-100"
+                                      >
+                                        {isImageReceipt ? (
+                                          <img
+                                            src={receiptLink}
+                                            alt={receiptLabel}
+                                            loading="lazy"
+                                            className="h-full w-full object-cover"
+                                          />
+                                        ) : (
+                                          <MaterialSymbol
+                                            name="description"
+                                            className="text-[18px] text-foreground/70"
+                                          />
+                                        )}
+                                        <span className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+                                      </button>
+                                    </Tooltip>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Dropdown placement="bottom-end">
+                              <DropdownTrigger>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  aria-label={`Menu da receita ${revenue.title}`}
+                                >
+                                  <MaterialSymbol name="more_vert" className="text-[20px]" />
+                                </Button>
+                              </DropdownTrigger>
+                              <DropdownMenu
+                                aria-label={`Ações da receita ${revenue.title}`}
+                                onAction={(key) => {
+                                  if (String(key) === "cancel") {
+                                    openRevenueCancelModal(revenue);
+                                  }
+                                }}
+                              >
+                                <DropdownItem
+                                  key="cancel"
+                                  color="danger"
+                                  isDisabled={normalizeRevenueStatusValue(revenue.status) === "cancelado"}
+                                  startContent={
+                                    <MaterialSymbol name="cancel" className="text-[18px]" />
+                                  }
+                                >
+                                  Cancelar
+                                </DropdownItem>
+                              </DropdownMenu>
+                            </Dropdown>
                           </td>
                         </tr>
                       ))
@@ -2091,39 +3234,94 @@ export default function ProjetosPage() {
         <div className="space-y-3">
           <div className="rounded-2xl border border-default-200 bg-content1/70 p-4 backdrop-blur-md">
             <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
-              Projeto da cobrança
+              Pesquisar projeto (cobranças)
             </label>
-            <select
-              value={selectedChargeProjectId}
-              onChange={(event) => setSelectedChargeProjectId(event.target.value)}
-              className="mt-2 h-10 w-full rounded-xl border border-default-200 bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
-            >
-              <option value="">Selecione um projeto</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <form className="mt-2 flex gap-2" onSubmit={handleChargeProjectSearchSubmit}>
+              <Input
+                value={chargeProjectSearchValue}
+                onValueChange={(value) => {
+                  setChargeProjectSearchValue(value);
+                  setIsChargeProjectSearchOpen(true);
+                  if (!value.trim()) {
+                    setSelectedChargeProjectId("");
+                  }
+                }}
+                onFocus={() => setIsChargeProjectSearchOpen(true)}
+                placeholder="Digite o nome do projeto"
+                startContent={<MaterialSymbol name="search" className="text-[18px]" />}
+              />
+              <Button
+                type="submit"
+                variant="flat"
+                isDisabled={chargeProjectSearchResults.length === 0}
+              >
+                Buscar
+              </Button>
+            </form>
+
+            {selectedChargeProject ? (
+              <p className="mt-2 text-xs text-foreground/70">
+                Selecionado: <strong>{selectedChargeProject.name}</strong>
+              </p>
+            ) : null}
+
+            {isChargeProjectSearchOpen ||
+            Boolean(chargeProjectSearchValue.trim()) ||
+            !selectedChargeProjectId ? (
+              <div className="mt-3 max-h-44 overflow-y-auto rounded-xl border border-default-200 bg-content1/70">
+                {chargeProjectSearchResults.length > 0 ? (
+                  chargeProjectSearchResults.slice(0, 10).map((project) => (
+                    <button
+                      type="button"
+                      key={project.id}
+                      onClick={() => selectChargeProject(project)}
+                      className={`flex w-full items-center justify-between gap-2 border-b border-default-200/70 px-3 py-2 text-left text-sm last:border-b-0 ${
+                        selectedChargeProjectId === project.id
+                          ? "bg-primary/10 text-primary"
+                          : "text-foreground hover:bg-default-100/70"
+                      }`}
+                    >
+                      <span>{project.name}</span>
+                      <span className="text-xs text-foreground/60">
+                        {project.projectTypeName || "Sem tipo"}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-3 py-2 text-sm text-foreground/70">
+                    Nenhum projeto encontrado.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-default-200 bg-content1/70 backdrop-blur-md">
             <div className="overflow-x-auto">
+              {chargeActionsError ? (
+                <p className="mx-4 mt-4 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {chargeActionsError}
+                </p>
+              ) : null}
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-content1/70">
                   <tr className="border-b border-default-200">
                     <th className="px-4 py-3 font-semibold text-foreground/80">Título</th>
+                    <th className="px-4 py-3 font-semibold text-foreground/80">Parcela</th>
                     <th className="px-4 py-3 font-semibold text-foreground/80">Valor</th>
                     <th className="px-4 py-3 font-semibold text-foreground/80">Vencimento</th>
                     <th className="px-4 py-3 font-semibold text-foreground/80">Início</th>
                     <th className="px-4 py-3 font-semibold text-foreground/80">Fim</th>
                     <th className="px-4 py-3 font-semibold text-foreground/80">Status</th>
+                    <th className="px-4 py-3 text-right font-semibold text-foreground/80">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoadingCharges ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={8}>
                         Carregando cobranças mensais...
                       </td>
                     </tr>
@@ -2131,7 +3329,7 @@ export default function ProjetosPage() {
 
                   {!isLoadingCharges && selectedChargeProjectId && monthlyCharges.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={8}>
                         Nenhuma cobrança mensal cadastrada para o projeto selecionado.
                       </td>
                     </tr>
@@ -2139,7 +3337,7 @@ export default function ProjetosPage() {
 
                   {!isLoadingCharges && !selectedChargeProjectId ? (
                     <tr>
-                      <td className="px-4 py-6 text-foreground/70" colSpan={6}>
+                      <td className="px-4 py-6 text-foreground/70" colSpan={8}>
                         Selecione um projeto para visualizar as cobranças mensais.
                       </td>
                     </tr>
@@ -2153,6 +3351,9 @@ export default function ProjetosPage() {
                         >
                           <td className="px-4 py-3 text-foreground">{charge.title}</td>
                           <td className="px-4 py-3 text-foreground/80">
+                            {charge.installment || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-foreground/80">
                             {formatCurrency(charge.amount)}
                           </td>
                           <td className="px-4 py-3 text-foreground/80">Dia {charge.dueDay}</td>
@@ -2164,14 +3365,94 @@ export default function ProjetosPage() {
                           </td>
                           <td className="px-4 py-3">
                             <span
-                              className={
-                                charge.active
-                                  ? "rounded-full border border-success/40 bg-success/10 px-2.5 py-1 text-xs font-medium text-success"
-                                  : "rounded-full border border-danger/40 bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger"
-                              }
+                              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getMonthlyChargeStatusBadgeClassName(
+                                charge.status,
+                              )}`}
                             >
-                              {charge.active ? "Ativa" : "Inativa"}
+                              {formatMonthlyChargeStatusLabel(charge.status)}
                             </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {normalizeMonthlyChargeStatusValue(charge.status) === "pendente" ? (
+                              <Dropdown placement="bottom-end">
+                                <DropdownTrigger>
+                                  <Button
+                                    isIconOnly
+                                    size="sm"
+                                    variant="light"
+                                    aria-label={`Menu da cobrança ${charge.title}`}
+                                    isDisabled={updatingChargeStatusID === charge.id}
+                                  >
+                                    <MaterialSymbol name="more_vert" className="text-[20px]" />
+                                  </Button>
+                                </DropdownTrigger>
+                                <DropdownMenu
+                                  aria-label={`Ações da cobrança ${charge.title}`}
+                                  onAction={(key) => {
+                                    if (String(key) === "edit") {
+                                      openChargeModal(charge);
+                                    }
+                                    if (String(key) === "edit-amount") {
+                                      openChargeAmountModal(charge);
+                                    }
+                                    if (String(key) === "delete") {
+                                      openChargeDeleteModal(charge);
+                                    }
+                                    if (String(key) === "mark-paid") {
+                                      void handleUpdateChargeStatus(charge, "pago");
+                                    }
+                                    if (String(key) === "mark-cancelled") {
+                                      void handleUpdateChargeStatus(charge, "cancelada");
+                                    }
+                                  }}
+                                >
+                                  <DropdownItem
+                                    key="edit"
+                                    startContent={
+                                      <MaterialSymbol name="edit_note" className="text-[18px]" />
+                                    }
+                                  >
+                                    Editar
+                                  </DropdownItem>
+                                  <DropdownItem
+                                    key="edit-amount"
+                                    startContent={
+                                      <MaterialSymbol name="edit" className="text-[18px]" />
+                                    }
+                                  >
+                                    Editar valor
+                                  </DropdownItem>
+                                  <DropdownItem
+                                    key="delete"
+                                    color="danger"
+                                    startContent={
+                                      <MaterialSymbol name="delete" className="text-[18px]" />
+                                    }
+                                  >
+                                    Excluir
+                                  </DropdownItem>
+                                  <DropdownItem
+                                    key="mark-paid"
+                                    startContent={
+                                      <MaterialSymbol name="payments" className="text-[18px]" />
+                                    }
+                                  >
+                                    Pagar
+                                  </DropdownItem>
+                                  <DropdownItem
+                                    key="mark-cancelled"
+                                    color="danger"
+                                    startContent={
+                                      <MaterialSymbol name="cancel" className="text-[18px]" />
+                                    }
+                                  >
+                                    Cancelar
+                                  </DropdownItem>
+                                </DropdownMenu>
+                              </Dropdown>
+                            ) : (
+                              <span className="text-xs text-foreground/50">-</span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -2191,17 +3472,18 @@ export default function ProjetosPage() {
             setEditingProjectID(null);
             setIsLoadingProjectModal(false);
             setProjectFormError(null);
+            setProjectManagerSearchValue("");
           }
         }}
         size="5xl"
         scrollBehavior="inside"
-        classNames={wideModalClassNames}
+        classNames={projectModalClassNames}
       >
         <ModalContent>
           {(closeModal) => (
             <form onSubmit={handleSubmitProject}>
               <ModalHeader>{editingProjectID ? "Editar projeto" : "Novo projeto"}</ModalHeader>
-              <ModalBody className="space-y-4">
+              <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
                 {isLoadingProjectModal ? (
                   <p className="rounded-xl border border-default-200 bg-default-100 px-3 py-2 text-sm text-foreground/80">
                     Carregando dados do projeto...
@@ -2228,8 +3510,8 @@ export default function ProjetosPage() {
                       objective: event.target.value,
                     }))
                   }
-                  rows={3}
-                  className="w-full rounded-xl border border-default-200 bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                  rows={6}
+                  className="min-h-[180px] w-full rounded-xl border border-default-200 bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary"
                   placeholder="Descreva o objetivo principal do projeto"
                 />
 
@@ -2313,6 +3595,57 @@ export default function ProjetosPage() {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
+                    Gestores do projeto
+                  </p>
+                  <Input
+                    value={projectManagerSearchValue}
+                    onValueChange={setProjectManagerSearchValue}
+                    placeholder="Pesquisar usuários por nome, login ou e-mail"
+                    startContent={<MaterialSymbol name="search" className="text-[18px]" />}
+                    className="mt-2"
+                  />
+                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto rounded-xl border border-default-200 p-3">
+                    {filteredProjectManagerUsers.length === 0 ? (
+                      <p className="text-sm text-foreground/70">
+                        Nenhum usuário ativo encontrado.
+                      </p>
+                    ) : null}
+
+                    {filteredProjectManagerUsers.map((user) => {
+                      const isChecked = projectForm.managerUserIds.includes(user.id);
+
+                      return (
+                        <label
+                          key={user.id}
+                          className="flex items-center justify-between gap-3 rounded-lg bg-default-100/60 px-3 py-2 text-sm"
+                        >
+                          <span>
+                            <strong className="text-foreground">{user.name}</strong>
+                            <span className="ml-2 text-xs text-foreground/60">{user.login}</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(event) => {
+                              setProjectForm((currentForm) => ({
+                                ...currentForm,
+                                managerUserIds: event.target.checked
+                                  ? [...currentForm.managerUserIds, user.id]
+                                  : currentForm.managerUserIds.filter(
+                                      (managerUserID) => managerUserID !== user.id,
+                                    ),
+                              }));
+                            }}
+                            className="h-4 w-4 rounded border-default-300"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
                     Clientes vinculados ao projeto
                   </p>
                   <div className="mt-2 max-h-52 space-y-2 overflow-y-auto rounded-xl border border-default-200 p-3">
@@ -2371,6 +3704,7 @@ export default function ProjetosPage() {
                     setEditingProjectID(null);
                     setIsLoadingProjectModal(false);
                     setProjectFormError(null);
+                    setProjectManagerSearchValue("");
                   }}
                 >
                   Cancelar
@@ -2398,13 +3732,13 @@ export default function ProjetosPage() {
           }
         }}
         size="3xl"
-        classNames={wideModalClassNames}
+        classNames={projectTypeModalClassNames}
       >
         <ModalContent>
           {(closeModal) => (
             <form onSubmit={handleSubmitProjectType}>
               <ModalHeader>Novo tipo de projeto</ModalHeader>
-              <ModalBody className="space-y-4">
+              <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
                     Categoria
@@ -2504,13 +3838,13 @@ export default function ProjetosPage() {
         }}
         size="4xl"
         scrollBehavior="inside"
-        classNames={wideModalClassNames}
+        classNames={revenueModalClassNames}
       >
         <ModalContent>
           {(closeModal) => (
             <form onSubmit={handleSubmitRevenue}>
               <ModalHeader>Nova receita</ModalHeader>
-              <ModalBody className="space-y-4">
+              <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
                     Projeto
@@ -2573,26 +3907,6 @@ export default function ProjetosPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
-                    Status
-                  </label>
-                  <select
-                    value={revenueForm.status}
-                    onChange={(event) =>
-                      setRevenueForm((currentForm) => ({
-                        ...currentForm,
-                        status: event.target.value,
-                      }))
-                    }
-                    className="mt-2 h-10 w-full rounded-xl border border-default-200 bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
-                  >
-                    <option value="pendente">Pendente</option>
-                    <option value="recebido">Recebido</option>
-                    <option value="cancelado">Cancelado</option>
-                  </select>
-                </div>
-
                 <Input
                   value={revenueForm.objective}
                   onValueChange={(value) =>
@@ -2610,135 +3924,59 @@ export default function ProjetosPage() {
                 />
 
                 <div className="rounded-xl border border-default-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">
-                      Comprovantes de recebimento
+                  <p className="text-sm font-medium text-foreground">
+                    Comprovantes de recebimento
+                  </p>
+                  <input
+                    ref={revenueReceiptFileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleRevenueReceiptFileInputChange}
+                  />
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => revenueReceiptFileInputRef.current?.click()}
+                    onKeyDown={handleRevenueReceiptAreaKeyDown}
+                    onPaste={handleRevenueReceiptPaste}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleRevenueReceiptDrop}
+                    className="mt-3 rounded-xl border border-dashed border-default-300 bg-default-50/60 px-4 py-6 text-center outline-none transition-colors hover:border-primary focus-visible:border-primary"
+                  >
+                    <MaterialSymbol
+                      name="upload_file"
+                      className="text-[32px] text-primary"
+                    />
+                    <p className="mt-2 text-sm font-semibold text-foreground">
+                      Cole, arraste ou clique para subir um arquivo
                     </p>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      startContent={<MaterialSymbol name="add" className="text-[16px]" />}
-                      onPress={() =>
-                        setRevenueForm((currentForm) => ({
-                          ...currentForm,
-                          receipts: [
-                            ...currentForm.receipts,
-                            {
-                              fileName: "",
-                              fileKey: "",
-                              contentType: "",
-                              issuedOn: "",
-                              notes: "",
-                            },
-                          ],
-                        }))
-                      }
-                    >
-                      Adicionar comprovante
-                    </Button>
+                    <p className="mt-1 text-xs text-foreground/70">
+                      Use Ctrl/Cmd + V para colar um arquivo da área de transferência.
+                    </p>
+                    {revenueForm.receipts[0] ? (
+                      <p className="mt-3 truncate text-xs font-medium text-foreground">
+                        {revenueForm.receipts[0].fileName}
+                      </p>
+                    ) : null}
                   </div>
 
-                  {revenueForm.receipts.map((receipt, index) => (
-                    <div key={`receipt-${index}`} className="mt-3 grid gap-2 md:grid-cols-2">
-                      <Input
-                        value={receipt.fileName}
-                        onValueChange={(value) =>
-                          setRevenueForm((currentForm) => ({
-                            ...currentForm,
-                            receipts: currentForm.receipts.map((currentReceipt, currentIndex) =>
-                              currentIndex === index
-                                ? { ...currentReceipt, fileName: value }
-                                : currentReceipt,
-                            ),
-                          }))
-                        }
-                        label="Nome do arquivo"
-                      />
-                      <Input
-                        value={receipt.fileKey}
-                        onValueChange={(value) =>
-                          setRevenueForm((currentForm) => ({
-                            ...currentForm,
-                            receipts: currentForm.receipts.map((currentReceipt, currentIndex) =>
-                              currentIndex === index
-                                ? { ...currentReceipt, fileKey: value }
-                                : currentReceipt,
-                            ),
-                          }))
-                        }
-                        label="Chave do arquivo"
-                      />
-                      <Input
-                        value={receipt.contentType}
-                        onValueChange={(value) =>
-                          setRevenueForm((currentForm) => ({
-                            ...currentForm,
-                            receipts: currentForm.receipts.map((currentReceipt, currentIndex) =>
-                              currentIndex === index
-                                ? { ...currentReceipt, contentType: value }
-                                : currentReceipt,
-                            ),
-                          }))
-                        }
-                        label="Content-Type"
-                      />
-                      <Input
-                        type="date"
-                        value={receipt.issuedOn}
-                        onValueChange={(value) =>
-                          setRevenueForm((currentForm) => ({
-                            ...currentForm,
-                            receipts: currentForm.receipts.map((currentReceipt, currentIndex) =>
-                              currentIndex === index
-                                ? { ...currentReceipt, issuedOn: value }
-                                : currentReceipt,
-                            ),
-                          }))
-                        }
-                        label="Data do comprovante"
-                      />
-                      <div className="md:col-span-2">
-                        <Input
-                          value={receipt.notes}
-                          onValueChange={(value) =>
-                            setRevenueForm((currentForm) => ({
-                              ...currentForm,
-                              receipts: currentForm.receipts.map((currentReceipt, currentIndex) =>
-                                currentIndex === index
-                                  ? { ...currentReceipt, notes: value }
-                                  : currentReceipt,
-                              ),
-                            }))
-                          }
-                          label="Observações"
-                        />
-                      </div>
-
-                      {revenueForm.receipts.length > 1 ? (
-                        <div className="md:col-span-2 flex justify-end">
-                          <Button
-                            size="sm"
-                            variant="flat"
-                            color="danger"
-                            startContent={
-                              <MaterialSymbol name="delete" className="text-[16px]" />
-                            }
-                            onPress={() =>
-                              setRevenueForm((currentForm) => ({
-                                ...currentForm,
-                                receipts: currentForm.receipts.filter(
-                                  (_currentReceipt, currentIndex) =>
-                                    currentIndex !== index,
-                                ),
-                              }))
-                            }
-                          >
-                            Remover comprovante
-                          </Button>
-                        </div>
-                      ) : null}
+                  {revenueForm.receipts[0] ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-default-100/70 px-3 py-2">
+                      <p className="text-xs text-foreground/70">
+                        Tipo: {revenueForm.receipts[0].contentType || "não informado"}
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="flat"
+                        color="danger"
+                        startContent={<MaterialSymbol name="delete" className="text-[16px]" />}
+                        onPress={clearRevenueReceiptFile}
+                      >
+                        Remover arquivo
+                      </Button>
                     </div>
-                  ))}
+                  ) : null}
                 </div>
 
                 {revenueFormError ? (
@@ -2773,19 +4011,202 @@ export default function ProjetosPage() {
       </Modal>
 
       <Modal
-        isOpen={isChargeModalOpen}
+        isOpen={isRevenueReceiptModalOpen}
         onOpenChange={(isOpen) => {
           if (!isOpen) {
-            setIsChargeModalOpen(false);
+            closeRevenueReceiptModal();
           }
         }}
-        size="3xl"
+        size="5xl"
+        scrollBehavior="inside"
         classNames={wideModalClassNames}
       >
         <ModalContent>
           {(closeModal) => (
+            <>
+              <ModalHeader>Comprovante</ModalHeader>
+              <ModalBody className="space-y-3">
+                <p className="text-sm text-foreground/80">
+                  {selectedRevenueReceipt?.fileName || selectedRevenueReceipt?.fileKey || "-"}
+                </p>
+                {selectedRevenueReceipt?.fileKey ? (
+                  <iframe
+                    title={selectedRevenueReceipt.fileName || "Comprovante"}
+                    src={selectedRevenueReceipt.fileKey}
+                    className="h-[68vh] w-full rounded-xl border border-default-200"
+                  />
+                ) : (
+                  <p className="rounded-xl border border-default-200 bg-default-100/70 px-3 py-2 text-sm text-foreground/70">
+                    Link do comprovante não informado.
+                  </p>
+                )}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                  onPress={() => {
+                    closeModal();
+                    closeRevenueReceiptModal();
+                  }}
+                >
+                  Fechar
+                </Button>
+                <Button
+                  as="a"
+                  color="primary"
+                  target="_blank"
+                  rel="noreferrer"
+                  href={selectedRevenueReceipt?.fileKey || "#"}
+                  isDisabled={!selectedRevenueReceipt?.fileKey}
+                  startContent={<MaterialSymbol name="open_in_new" className="text-[18px]" />}
+                >
+                  Abrir em nova aba
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isRevenueCancelModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !isCancellingRevenue) {
+            closeRevenueCancelModal();
+          }
+        }}
+        size="2xl"
+        classNames={projectTypeModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => (
+            <>
+              <ModalHeader>Cancelar receita</ModalHeader>
+              <ModalBody className="space-y-4">
+                <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-foreground/80">
+                  Tem certeza que deseja cancelar a receita{" "}
+                  <strong>{revenueToCancel?.title || "-"}</strong>?
+                </p>
+
+                {revenueCancelError ? (
+                  <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                    {revenueCancelError}
+                  </p>
+                ) : null}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  isDisabled={isCancellingRevenue}
+                  startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                  onPress={() => {
+                    closeModal();
+                    closeRevenueCancelModal();
+                  }}
+                >
+                  Fechar
+                </Button>
+                <Button
+                  color="danger"
+                  isLoading={isCancellingRevenue}
+                  startContent={<MaterialSymbol name="cancel" className="text-[18px]" />}
+                  onPress={() => {
+                    void handleCancelRevenue();
+                  }}
+                >
+                  Confirmar cancelamento
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isProjectStatusModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !isUpdatingProjectStatus) {
+            closeProjectStatusModal();
+          }
+        }}
+        size="2xl"
+        classNames={projectTypeModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => {
+            const isCancelAction = projectStatusModalContext?.nextStatus === "cancelado";
+
+            return (
+              <>
+                <ModalHeader>
+                  {isCancelAction ? "Cancelar projeto" : "Concluir projeto"}
+                </ModalHeader>
+                <ModalBody className="space-y-4">
+                  <p className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground/85">
+                    Tem certeza que deseja {isCancelAction ? "cancelar" : "concluir"} o projeto{" "}
+                    <strong>{projectStatusModalContext?.project.name || "-"}</strong>
+                    {isCancelAction ? "? Isso também cancelará fases e tarefas." : "?"}
+                  </p>
+
+                  {projectStatusModalError ? (
+                    <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                      {projectStatusModalError}
+                    </p>
+                  ) : null}
+                </ModalBody>
+                <ModalFooter>
+                  <Button
+                    variant="flat"
+                    isDisabled={isUpdatingProjectStatus}
+                    startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                    onPress={() => {
+                      closeModal();
+                      closeProjectStatusModal();
+                    }}
+                  >
+                    Fechar
+                  </Button>
+                  <Button
+                    color={isCancelAction ? "danger" : "primary"}
+                    isLoading={isUpdatingProjectStatus}
+                    startContent={
+                      <MaterialSymbol
+                        name={isCancelAction ? "cancel" : "task_alt"}
+                        className="text-[18px]"
+                      />
+                    }
+                    onPress={() => {
+                      void handleUpdateProjectStatus();
+                    }}
+                  >
+                    {isCancelAction ? "Confirmar cancelamento" : "Confirmar conclusão"}
+                  </Button>
+                </ModalFooter>
+              </>
+            );
+          }}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isChargeModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setIsChargeModalOpen(false);
+            setEditingChargeID(null);
+            setChargeFormError(null);
+          }
+        }}
+        size="3xl"
+        classNames={chargeModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => (
             <form onSubmit={handleSubmitCharge}>
-              <ModalHeader>Nova cobrança mensal</ModalHeader>
+              <ModalHeader>
+                {editingChargeID ? "Editar cobrança mensal" : "Nova cobrança mensal"}
+              </ModalHeader>
               <ModalBody className="space-y-4">
                 <div>
                   <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
@@ -2799,6 +4220,7 @@ export default function ProjetosPage() {
                         projectId: event.target.value,
                       }))
                     }
+                    disabled={Boolean(editingChargeID)}
                     className="mt-2 h-10 w-full rounded-xl border border-default-200 bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
                   >
                     <option value="">Selecione um projeto</option>
@@ -2819,7 +4241,7 @@ export default function ProjetosPage() {
                   isRequired
                 />
 
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-3">
                   <Input
                     value={chargeForm.amount}
                     onValueChange={(value) =>
@@ -2837,6 +4259,14 @@ export default function ProjetosPage() {
                     label="Dia de vencimento"
                     placeholder="1"
                     isRequired
+                  />
+                  <Input
+                    value={chargeForm.installment}
+                    onValueChange={(value) =>
+                      setChargeForm((currentForm) => ({ ...currentForm, installment: value }))
+                    }
+                    label="Parcela"
+                    placeholder="Ex: 1/12"
                   />
                 </div>
 
@@ -2883,6 +4313,8 @@ export default function ProjetosPage() {
                   onPress={() => {
                     closeModal();
                     setIsChargeModalOpen(false);
+                    setEditingChargeID(null);
+                    setChargeFormError(null);
                   }}
                 >
                   Cancelar
@@ -2893,10 +4325,131 @@ export default function ProjetosPage() {
                   isLoading={isSavingCharge}
                   startContent={<MaterialSymbol name="save" className="text-[18px]" />}
                 >
-                  Salvar cobrança
+                  {editingChargeID ? "Salvar alterações" : "Salvar cobrança"}
                 </Button>
               </ModalFooter>
             </form>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isChargeAmountModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setIsChargeAmountModalOpen(false);
+            setEditingCharge(null);
+            setChargeAmountFormValue("");
+            setChargeAmountFormError(null);
+          }
+        }}
+        size="2xl"
+        classNames={projectTypeModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => (
+            <form onSubmit={handleSubmitChargeAmount}>
+              <ModalHeader>Editar valor da cobrança</ModalHeader>
+              <ModalBody className="space-y-4">
+                <p className="rounded-xl border border-default-200 bg-default-100/70 px-3 py-2 text-sm text-foreground/80">
+                  {editingCharge?.title || "-"}
+                  {editingCharge?.installment
+                    ? ` | Parcela: ${editingCharge.installment}`
+                    : ""}
+                </p>
+
+                <Input
+                  value={chargeAmountFormValue}
+                  onValueChange={setChargeAmountFormValue}
+                  label="Valor"
+                  placeholder="0.00"
+                  isRequired
+                />
+
+                {chargeAmountFormError ? (
+                  <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                    {chargeAmountFormError}
+                  </p>
+                ) : null}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                  onPress={() => {
+                    closeModal();
+                    setIsChargeAmountModalOpen(false);
+                    setEditingCharge(null);
+                    setChargeAmountFormValue("");
+                    setChargeAmountFormError(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  color="primary"
+                  type="submit"
+                  isLoading={isSavingChargeAmount}
+                  startContent={<MaterialSymbol name="save" className="text-[18px]" />}
+                >
+                  Salvar valor
+                </Button>
+              </ModalFooter>
+            </form>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isChargeDeleteModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !isDeletingCharge) {
+            closeChargeDeleteModal();
+          }
+        }}
+        size="2xl"
+        classNames={projectTypeModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => (
+            <>
+              <ModalHeader>Excluir cobrança mensal</ModalHeader>
+              <ModalBody className="space-y-4">
+                <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-foreground/80">
+                  Tem certeza que deseja excluir a cobrança{" "}
+                  <strong>{chargeToDelete?.title || "-"}</strong>?
+                </p>
+
+                {chargeDeleteError ? (
+                  <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                    {chargeDeleteError}
+                  </p>
+                ) : null}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  isDisabled={isDeletingCharge}
+                  startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                  onPress={() => {
+                    closeModal();
+                    closeChargeDeleteModal();
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  color="danger"
+                  isLoading={isDeletingCharge}
+                  startContent={<MaterialSymbol name="delete" className="text-[18px]" />}
+                  onPress={() => {
+                    void handleDeleteCharge();
+                  }}
+                >
+                  Excluir
+                </Button>
+              </ModalFooter>
+            </>
           )}
         </ModalContent>
       </Modal>
@@ -2909,6 +4462,7 @@ export default function ProjetosPage() {
             setIsPhaseModalOpen(false);
             setIsSubPhaseModalOpen(false);
             setIsTaskModalOpen(false);
+            closeTaskCommentsModal();
             setEditingPhase(null);
             setEditingSubPhase(null);
             setEditingTask(null);
@@ -3120,178 +4674,198 @@ export default function ProjetosPage() {
                                     )}
                                   </td>
                                   <td className="px-3 py-2 text-right">
-                                    <Dropdown placement="bottom-end">
-                                      <DropdownTrigger>
+                                    <div className="flex items-center justify-end gap-2">
+                                      {row.kind === "task" && row.taskRef ? (
                                         <Button
-                                          isIconOnly
                                           size="sm"
-                                          variant="light"
-                                          aria-label={`Menu de ${row.title}`}
+                                          variant="flat"
+                                          startContent={
+                                            <MaterialSymbol name="comment" className="text-[16px]" />
+                                          }
+                                          onPress={() =>
+                                            openTaskCommentsModal(
+                                              row.phaseRef,
+                                              row.subPhaseRef,
+                                              row.taskRef as ProjectTask,
+                                            )
+                                          }
                                         >
-                                          <MaterialSymbol
-                                            name="more_vert"
-                                            className="text-[20px]"
-                                          />
+                                          Comentários
                                         </Button>
-                                      </DropdownTrigger>
-                                      <DropdownMenu
-                                        aria-label={`Ações de ${row.title}`}
-                                        onAction={(key) => {
-                                          const action = String(key);
-                                          if (row.kind === "phase") {
-                                            if (action === "edit") {
-                                              openPhaseModal(row.phaseRef);
+                                      ) : null}
+                                      <Dropdown placement="bottom-end">
+                                        <DropdownTrigger>
+                                          <Button
+                                            isIconOnly
+                                            size="sm"
+                                            variant="light"
+                                            aria-label={`Menu de ${row.title}`}
+                                          >
+                                            <MaterialSymbol
+                                              name="more_vert"
+                                              className="text-[20px]"
+                                            />
+                                          </Button>
+                                        </DropdownTrigger>
+                                        <DropdownMenu
+                                          aria-label={`Ações de ${row.title}`}
+                                          onAction={(key) => {
+                                            const action = String(key);
+                                            if (row.kind === "phase") {
+                                              if (action === "edit") {
+                                                openPhaseModal(row.phaseRef);
+                                                return;
+                                              }
+                                              if (action === "add-subphase") {
+                                                openSubPhaseModal(row.phaseRef);
+                                                return;
+                                              }
+                                              if (action === "add-task") {
+                                                openTaskModal(row.phaseRef, null);
+                                                return;
+                                              }
+                                              if (action === "delete") {
+                                                handleDeletePlaceholder("fase");
+                                              }
                                               return;
                                             }
-                                            if (action === "add-subphase") {
-                                              openSubPhaseModal(row.phaseRef);
-                                              return;
-                                            }
-                                            if (action === "add-task") {
-                                              openTaskModal(row.phaseRef, null);
-                                              return;
-                                            }
-                                            if (action === "delete") {
-                                              handleDeletePlaceholder("fase");
-                                            }
-                                            return;
-                                          }
 
-                                          if (row.kind === "subphase") {
-                                            if (action === "edit" && row.subPhaseRef) {
-                                              openSubPhaseModal(row.phaseRef, row.subPhaseRef);
+                                            if (row.kind === "subphase") {
+                                              if (action === "edit" && row.subPhaseRef) {
+                                                openSubPhaseModal(row.phaseRef, row.subPhaseRef);
+                                                return;
+                                              }
+                                              if (action === "add-task") {
+                                                openTaskModal(row.phaseRef, row.subPhaseRef);
+                                                return;
+                                              }
+                                              if (action === "delete") {
+                                                handleDeletePlaceholder("sub-fase");
+                                              }
                                               return;
                                             }
-                                            if (action === "add-task") {
-                                              openTaskModal(row.phaseRef, row.subPhaseRef);
-                                              return;
-                                            }
-                                            if (action === "delete") {
-                                              handleDeletePlaceholder("sub-fase");
-                                            }
-                                            return;
-                                          }
 
-                                          if (row.kind === "task") {
-                                            if (action === "edit" && row.taskRef) {
-                                              openTaskModal(row.phaseRef, row.subPhaseRef, row.taskRef);
-                                              return;
+                                            if (row.kind === "task") {
+                                              if (action === "edit" && row.taskRef) {
+                                                openTaskModal(row.phaseRef, row.subPhaseRef, row.taskRef);
+                                                return;
+                                              }
+                                              if (action === "delete") {
+                                                handleDeletePlaceholder("tarefa");
+                                              }
                                             }
-                                            if (action === "delete") {
-                                              handleDeletePlaceholder("tarefa");
-                                            }
-                                          }
-                                        }}
-                                      >
-                                        {row.kind === "phase" ? (
-                                          <>
-                                            <DropdownItem
-                                              key="edit"
-                                              startContent={
-                                                <MaterialSymbol name="edit" className="text-[18px]" />
-                                              }
-                                            >
-                                              Editar
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="add-subphase"
-                                              startContent={
-                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-success-100 text-[10px] font-bold text-success-700">
-                                                  S
-                                                </span>
-                                              }
-                                            >
-                                              Sub-fase
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="add-task"
-                                              startContent={
-                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-warning-100 text-[10px] font-bold text-warning-700">
-                                                  T
-                                                </span>
-                                              }
-                                            >
-                                              Tarefa
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="delete"
-                                              color="danger"
-                                              className="text-danger"
-                                              startContent={
-                                                <MaterialSymbol
-                                                  name="delete"
-                                                  className="text-[18px]"
-                                                />
-                                              }
-                                            >
-                                              Excluir
-                                            </DropdownItem>
-                                          </>
-                                        ) : null}
+                                          }}
+                                        >
+                                          {row.kind === "phase" ? (
+                                            <>
+                                              <DropdownItem
+                                                key="edit"
+                                                startContent={
+                                                  <MaterialSymbol name="edit" className="text-[18px]" />
+                                                }
+                                              >
+                                                Editar
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="add-subphase"
+                                                startContent={
+                                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-success-100 text-[10px] font-bold text-success-700">
+                                                    S
+                                                  </span>
+                                                }
+                                              >
+                                                Sub-fase
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="add-task"
+                                                startContent={
+                                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-warning-100 text-[10px] font-bold text-warning-700">
+                                                    T
+                                                  </span>
+                                                }
+                                              >
+                                                Tarefa
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="delete"
+                                                color="danger"
+                                                className="text-danger"
+                                                startContent={
+                                                  <MaterialSymbol
+                                                    name="delete"
+                                                    className="text-[18px]"
+                                                  />
+                                                }
+                                              >
+                                                Excluir
+                                              </DropdownItem>
+                                            </>
+                                          ) : null}
 
-                                        {row.kind === "subphase" ? (
-                                          <>
-                                            <DropdownItem
-                                              key="edit"
-                                              startContent={
-                                                <MaterialSymbol name="edit" className="text-[18px]" />
-                                              }
-                                            >
-                                              Editar
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="add-task"
-                                              startContent={
-                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-warning-100 text-[10px] font-bold text-warning-700">
-                                                  T
-                                                </span>
-                                              }
-                                            >
-                                              Tarefa
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="delete"
-                                              color="danger"
-                                              className="text-danger"
-                                              startContent={
-                                                <MaterialSymbol
-                                                  name="delete"
-                                                  className="text-[18px]"
-                                                />
-                                              }
-                                            >
-                                              Excluir
-                                            </DropdownItem>
-                                          </>
-                                        ) : null}
+                                          {row.kind === "subphase" ? (
+                                            <>
+                                              <DropdownItem
+                                                key="edit"
+                                                startContent={
+                                                  <MaterialSymbol name="edit" className="text-[18px]" />
+                                                }
+                                              >
+                                                Editar
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="add-task"
+                                                startContent={
+                                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-warning-100 text-[10px] font-bold text-warning-700">
+                                                    T
+                                                  </span>
+                                                }
+                                              >
+                                                Tarefa
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="delete"
+                                                color="danger"
+                                                className="text-danger"
+                                                startContent={
+                                                  <MaterialSymbol
+                                                    name="delete"
+                                                    className="text-[18px]"
+                                                  />
+                                                }
+                                              >
+                                                Excluir
+                                              </DropdownItem>
+                                            </>
+                                          ) : null}
 
-                                        {row.kind === "task" ? (
-                                          <>
-                                            <DropdownItem
-                                              key="edit"
-                                              startContent={
-                                                <MaterialSymbol name="edit" className="text-[18px]" />
-                                              }
-                                            >
-                                              Editar
-                                            </DropdownItem>
-                                            <DropdownItem
-                                              key="delete"
-                                              color="danger"
-                                              className="text-danger"
-                                              startContent={
-                                                <MaterialSymbol
-                                                  name="delete"
-                                                  className="text-[18px]"
-                                                />
-                                              }
-                                            >
-                                              Excluir
-                                            </DropdownItem>
-                                          </>
-                                        ) : null}
-                                      </DropdownMenu>
-                                    </Dropdown>
+                                          {row.kind === "task" ? (
+                                            <>
+                                              <DropdownItem
+                                                key="edit"
+                                                startContent={
+                                                  <MaterialSymbol name="edit" className="text-[18px]" />
+                                                }
+                                              >
+                                                Editar
+                                              </DropdownItem>
+                                              <DropdownItem
+                                                key="delete"
+                                                color="danger"
+                                                className="text-danger"
+                                                startContent={
+                                                  <MaterialSymbol
+                                                    name="delete"
+                                                    className="text-[18px]"
+                                                  />
+                                                }
+                                              >
+                                                Excluir
+                                              </DropdownItem>
+                                            </>
+                                          ) : null}
+                                        </DropdownMenu>
+                                      </Dropdown>
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -3313,6 +4887,7 @@ export default function ProjetosPage() {
                     setIsPhaseModalOpen(false);
                     setIsSubPhaseModalOpen(false);
                     setIsTaskModalOpen(false);
+                    closeTaskCommentsModal();
                     setEditingPhase(null);
                     setEditingSubPhase(null);
                     setEditingTask(null);
@@ -3325,6 +4900,212 @@ export default function ProjetosPage() {
                 </Button>
               </ModalFooter>
             </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isTaskCommentsModalOpen}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !isSavingTaskComment) {
+            closeTaskCommentsModal();
+          }
+        }}
+        size="5xl"
+        scrollBehavior="inside"
+        classNames={wideModalClassNames}
+      >
+        <ModalContent>
+          {(closeModal) => (
+            <form onSubmit={handleSubmitTaskComment}>
+              <ModalHeader>Comentários da tarefa</ModalHeader>
+              <ModalBody className="space-y-4">
+                <p className="rounded-lg bg-default-100/70 px-3 py-2 text-xs text-foreground/70">
+                  {taskCommentModalContext
+                    ? `${taskCommentModalContext.task.name} | ${buildTaskBreadcrumb(
+                        taskCommentModalContext.phase,
+                        taskCommentModalContext.subPhase,
+                      )}`
+                    : "-"}
+                </p>
+
+                <div className="rounded-xl border border-default-200 p-3">
+                  <p className="text-sm font-semibold text-foreground">Histórico de comentários</p>
+                  <div className="mt-3 max-h-[40vh] space-y-2 overflow-y-auto pr-1">
+                    {isLoadingTaskComments ? (
+                      <p className="text-sm text-foreground/70">Carregando comentários...</p>
+                    ) : null}
+
+                    {!isLoadingTaskComments && flattenedTaskComments.length === 0 ? (
+                      <p className="text-sm text-foreground/70">
+                        Nenhum comentário cadastrado para esta tarefa.
+                      </p>
+                    ) : null}
+
+                    {!isLoadingTaskComments
+                      ? flattenedTaskComments.map((threadItem) => (
+                          <div
+                            key={threadItem.comment.id}
+                            className="rounded-xl border border-default-200 bg-content1 p-3"
+                            style={{ marginLeft: `${Math.min(threadItem.depth, 6) * 20}px` }}
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="space-y-1 text-left">
+                                <div className="flex items-center gap-2">
+                                  <MaterialSymbol
+                                    name={getTaskCommentAuthorIconName(threadItem.comment)}
+                                    className="text-[16px] text-foreground/70"
+                                  />
+                                  <p className="text-xs font-semibold text-foreground/80">
+                                    {getTaskCommentAuthorName(threadItem.comment)}
+                                  </p>
+                                  <span className="rounded-full border border-default-300 bg-default-100 px-2 py-0.5 text-[10px] font-medium text-foreground/70">
+                                    {getTaskCommentAuthorRoleLabel(threadItem.comment)}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-foreground/60">
+                                  {formatDateTime(threadItem.comment.created)}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="light"
+                                onPress={() => handleStartReplyToComment(threadItem.comment)}
+                              >
+                                Responder
+                              </Button>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                              {threadItem.comment.comment || "-"}
+                            </p>
+                            {threadItem.comment.files.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {threadItem.comment.files.map((file, index) => (
+                                  <p
+                                    key={`${threadItem.comment.id}-file-${index}`}
+                                    className="text-xs text-foreground/70"
+                                  >
+                                    Arquivo: {file.fileName || file.fileKey || "-"}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))
+                      : null}
+                  </div>
+                </div>
+
+                {replyTargetComment ? (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
+                    <p className="truncate text-xs text-foreground/80">
+                      Respondendo comentário: {replyTargetComment.comment}
+                    </p>
+                    <Button type="button" size="sm" variant="light" onPress={handleClearReplyTarget}>
+                      Limpar resposta
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
+                    Novo comentário
+                  </label>
+                  <textarea
+                    ref={taskCommentTextareaRef}
+                    value={taskCommentForm.comment}
+                    onChange={(event) =>
+                      setTaskCommentForm((currentForm) => ({
+                        ...currentForm,
+                        comment: event.target.value,
+                      }))
+                    }
+                    rows={4}
+                    className="w-full rounded-xl border border-default-200 bg-transparent px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                    placeholder="Descreva o comentário da tarefa"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-default-200 p-3">
+                  <p className="text-sm font-medium text-foreground">Arquivo do comentário</p>
+                  <input
+                    ref={taskCommentFileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleTaskCommentFileInputChange}
+                  />
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => taskCommentFileInputRef.current?.click()}
+                    onKeyDown={handleTaskCommentAreaKeyDown}
+                    onPaste={handleTaskCommentPaste}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleTaskCommentDrop}
+                    className="mt-3 rounded-xl border border-dashed border-default-300 bg-default-50/60 px-4 py-6 text-center outline-none transition-colors hover:border-primary focus-visible:border-primary"
+                  >
+                    <MaterialSymbol name="upload_file" className="text-[28px] text-primary" />
+                    <p className="mt-2 text-sm font-semibold text-foreground">
+                      Cole, arraste ou clique para subir um arquivo
+                    </p>
+                    {taskCommentForm.files[0] ? (
+                      <p className="mt-2 truncate text-xs text-foreground/70">
+                        {taskCommentForm.files[0].fileName}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {taskCommentForm.files[0] ? (
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="flat"
+                        color="danger"
+                        startContent={<MaterialSymbol name="delete" className="text-[16px]" />}
+                        onPress={clearTaskCommentFile}
+                      >
+                        Remover arquivo
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {taskCommentsError ? (
+                  <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                    {taskCommentsError}
+                  </p>
+                ) : null}
+
+                {taskCommentFormError ? (
+                  <p className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+                    {taskCommentFormError}
+                  </p>
+                ) : null}
+              </ModalBody>
+              <ModalFooter>
+                <Button
+                  variant="flat"
+                  startContent={<MaterialSymbol name="close" className="text-[18px]" />}
+                  isDisabled={isSavingTaskComment}
+                  onPress={() => {
+                    closeModal();
+                    closeTaskCommentsModal();
+                  }}
+                >
+                  Fechar
+                </Button>
+                <Button
+                  color="primary"
+                  type="submit"
+                  isLoading={isSavingTaskComment}
+                  startContent={<MaterialSymbol name="save" className="text-[18px]" />}
+                >
+                  Salvar comentário
+                </Button>
+              </ModalFooter>
+            </form>
           )}
         </ModalContent>
       </Modal>
@@ -3643,7 +5424,7 @@ export default function ProjetosPage() {
           }
         }}
         size={editingTask ? "5xl" : "2xl"}
-        classNames={editingTask ? veryWideTaskModalClassNames : wideModalClassNames}
+        classNames={editingTask ? veryWideTaskModalClassNames : taskCreateModalClassNames}
       >
         <ModalContent>
           {(closeModal) => (
@@ -3755,6 +5536,29 @@ export default function ProjetosPage() {
                       </select>
                     </div>
                   </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/60">
+                    Responsável pela tarefa
+                  </label>
+                  <select
+                    value={taskForm.responsibleUserId}
+                    onChange={(event) =>
+                      setTaskForm((currentForm) => ({
+                        ...currentForm,
+                        responsibleUserId: event.target.value,
+                      }))
+                    }
+                    className="mt-2 h-10 w-full rounded-xl border border-default-200 bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                  >
+                    <option value="">Sem responsável definido</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name} ({user.login})
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {taskFormError ? (
@@ -4126,6 +5930,92 @@ function buildPlanningRows(
   return rows;
 }
 
+function flattenTaskComments(comments: ProjectTaskComment[]): FlattenedTaskComment[] {
+  if (comments.length === 0) {
+    return [];
+  }
+
+  const childrenByParentID = new Map<string, ProjectTaskComment[]>();
+  for (const comment of comments) {
+    const parentKey = (comment.parentCommentId || "").trim();
+    const currentChildren = childrenByParentID.get(parentKey) || [];
+    currentChildren.push(comment);
+    childrenByParentID.set(parentKey, currentChildren);
+  }
+
+  childrenByParentID.forEach((childComments: ProjectTaskComment[]) => {
+    childComments.sort((a: ProjectTaskComment, b: ProjectTaskComment) => {
+      const createdAtA = new Date(a.created || "").getTime();
+      const createdAtB = new Date(b.created || "").getTime();
+      const byCreatedAt =
+        (Number.isNaN(createdAtA) ? 0 : createdAtA) -
+        (Number.isNaN(createdAtB) ? 0 : createdAtB);
+      if (byCreatedAt !== 0) {
+        return byCreatedAt;
+      }
+      return (a.id || "").localeCompare(b.id || "");
+    });
+  });
+
+  const flattened: FlattenedTaskComment[] = [];
+  const visited = new Set<string>();
+
+  const walk = (parentCommentID: string, depth: number) => {
+    const children = childrenByParentID.get(parentCommentID) || [];
+    for (const child of children) {
+      if (visited.has(child.id)) {
+        continue;
+      }
+      visited.add(child.id);
+      flattened.push({
+        comment: child,
+        depth,
+      });
+      walk(child.id, depth + 1);
+    }
+  };
+
+  walk("", 0);
+
+  for (const comment of comments) {
+    if (visited.has(comment.id)) {
+      continue;
+    }
+    flattened.push({ comment, depth: 0 });
+  }
+
+  return flattened;
+}
+
+function filterProjectsBySearch(
+  projects: ProjectListItem[],
+  rawSearch: string,
+): ProjectListItem[] {
+  const normalizedSearch = rawSearch.trim().toLowerCase();
+  if (!normalizedSearch) {
+    return projects;
+  }
+
+  return projects.filter((project) =>
+    [project.name, project.objective, project.projectTypeName, project.projectCategoryName]
+      .map((value) => (value || "").toLowerCase())
+      .some((value) => value.includes(normalizedSearch)),
+  );
+}
+
+function filterUsersBySearch(users: UserSummary[], rawSearch: string): UserSummary[] {
+  const normalizedSearch = rawSearch.trim().toLowerCase();
+  if (!normalizedSearch) {
+    return users;
+  }
+
+  return users.filter((user) =>
+    [user.name, user.login, user.email]
+      .map((value) => (value || "").toLowerCase())
+      .some((value) => value.includes(normalizedSearch)),
+  );
+}
+
 function parseSortableDate(value?: string): number {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -4293,9 +6183,63 @@ function formatTaskStatusLabel(value: string): string {
   }
 }
 
-function formatRevenueStatusLabel(value: string): string {
+function normalizeProjectStatusValue(
+  value: string,
+  active = true,
+): "planejamento" | "andamento" | "concluido" | "cancelado" {
   const normalizedValue = (value || "").trim().toLowerCase();
   switch (normalizedValue) {
+    case "cancelado":
+    case "cancelada":
+      return "cancelado";
+    case "concluido":
+    case "concluida":
+      return "concluido";
+    case "andamento":
+    case "em_andamento":
+    case "em andamento":
+      return "andamento";
+    case "planejamento":
+      return "planejamento";
+    default:
+      return active ? "planejamento" : "cancelado";
+  }
+}
+
+function formatProjectStatusLabel(
+  value: "planejamento" | "andamento" | "concluido" | "cancelado",
+): string {
+  switch (value) {
+    case "andamento":
+      return "Em andamento";
+    case "concluido":
+      return "Concluído";
+    case "cancelado":
+      return "Cancelado";
+    case "planejamento":
+    default:
+      return "Planejamento";
+  }
+}
+
+function getProjectStatusBadgeClassName(
+  value: "planejamento" | "andamento" | "concluido" | "cancelado",
+): string {
+  switch (value) {
+    case "andamento":
+      return "border-warning/40 bg-warning/10 text-warning";
+    case "concluido":
+      return "border-success/40 bg-success/10 text-success";
+    case "cancelado":
+      return "border-danger/40 bg-danger/10 text-danger";
+    case "planejamento":
+    default:
+      return "border-primary/40 bg-primary/10 text-primary";
+  }
+}
+
+function formatRevenueStatusLabel(value: string): string {
+  switch (normalizeRevenueStatusValue(value)) {
     case "recebido":
       return "Recebido";
     case "cancelado":
@@ -4303,6 +6247,58 @@ function formatRevenueStatusLabel(value: string): string {
     case "pendente":
     default:
       return "Pendente";
+  }
+}
+
+function normalizeRevenueStatusValue(value: string): "pendente" | "recebido" | "cancelado" {
+  const normalizedValue = (value || "").trim().toLowerCase();
+  switch (normalizedValue) {
+    case "recebido":
+      return "recebido";
+    case "cancelado":
+      return "cancelado";
+    case "pendente":
+    default:
+      return "pendente";
+  }
+}
+
+function normalizeMonthlyChargeStatusValue(value: string): "pendente" | "pago" | "cancelada" {
+  const normalizedValue = (value || "").trim().toLowerCase();
+  switch (normalizedValue) {
+    case "pago":
+    case "recebido":
+      return "pago";
+    case "cancelada":
+    case "cancelado":
+      return "cancelada";
+    case "pendente":
+    default:
+      return "pendente";
+  }
+}
+
+function formatMonthlyChargeStatusLabel(value: string): string {
+  switch (normalizeMonthlyChargeStatusValue(value)) {
+    case "pago":
+      return "Pago";
+    case "cancelada":
+      return "Cancelada";
+    case "pendente":
+    default:
+      return "Pendente";
+  }
+}
+
+function getMonthlyChargeStatusBadgeClassName(value: string): string {
+  switch (normalizeMonthlyChargeStatusValue(value)) {
+    case "pago":
+      return "border-success/40 bg-success/10 text-success";
+    case "cancelada":
+      return "border-danger/40 bg-danger/10 text-danger";
+    case "pendente":
+    default:
+      return "border-warning/40 bg-warning/10 text-warning";
   }
 }
 
@@ -4348,6 +6344,43 @@ function formatDateTime(value?: string): string {
   }
 
   return parsedDate.toLocaleString("pt-BR");
+}
+
+function getTaskCommentAuthorName(comment: ProjectTaskComment): string {
+  const authorName = (comment.authorName || comment.userName || "").trim();
+  if (authorName) {
+    return authorName;
+  }
+  if ((comment.authorType || "").toLowerCase() === "client") {
+    return "Cliente";
+  }
+  return "Usuário";
+}
+
+function getTaskCommentAuthorRoleLabel(comment: ProjectTaskComment): string {
+  if (comment.isTaskResponsible) {
+    return "Responsável";
+  }
+  if (comment.isProjectManager) {
+    return "Gestor";
+  }
+  if ((comment.authorType || "").toLowerCase() === "client") {
+    return "Cliente";
+  }
+  return "Usuário";
+}
+
+function getTaskCommentAuthorIconName(comment: ProjectTaskComment): string {
+  if (comment.isTaskResponsible) {
+    return "assignment_ind";
+  }
+  if (comment.isProjectManager) {
+    return "manage_accounts";
+  }
+  if ((comment.authorType || "").toLowerCase() === "client") {
+    return "badge";
+  }
+  return "person";
 }
 
 function formatPlanningKindLabel(kind: string): string {
@@ -4453,16 +6486,17 @@ function buildProjectPdfDocumentFromExport(exportPayload: ProjectExportPayload):
             (charge) => `
               <tr>
                 <td>${escapeHtml(charge.title || "-")}</td>
+                <td>${escapeHtml(charge.installment || "-")}</td>
                 <td>${formatCurrency(charge.amount)}</td>
                 <td>${escapeHtml(charge.dueDay)}</td>
                 <td>${escapeHtml(formatDate(charge.startsOn))}</td>
                 <td>${escapeHtml(formatDate(charge.endsOn))}</td>
-                <td>${charge.active ? "Ativa" : "Inativa"}</td>
+                <td>${escapeHtml(formatMonthlyChargeStatusLabel(charge.status))}</td>
               </tr>
             `,
           )
           .join("")
-      : `<tr><td colspan="6" class="empty">Nenhuma cobrança mensal cadastrada.</td></tr>`;
+      : `<tr><td colspan="7" class="empty">Nenhuma cobrança mensal cadastrada.</td></tr>`;
 
   const planningRowsHtml =
     planning.length > 0
@@ -4653,6 +6687,7 @@ function buildProjectPdfDocumentFromExport(exportPayload: ProjectExportPayload):
               <thead>
                 <tr>
                   <th>Título</th>
+                  <th>Parcela</th>
                   <th>Valor</th>
                   <th>Dia vencimento</th>
                   <th>Início</th>
@@ -4757,16 +6792,17 @@ function buildProjectPdfDocument(
             (charge) => `
               <tr>
                 <td>${escapeHtml(charge.title || "-")}</td>
+                <td>${escapeHtml(charge.installment || "-")}</td>
                 <td>${formatCurrency(charge.amount)}</td>
                 <td>${escapeHtml(charge.dueDay)}</td>
                 <td>${escapeHtml(formatDate(charge.startsOn))}</td>
                 <td>${escapeHtml(formatDate(charge.endsOn))}</td>
-                <td>${charge.active ? "Ativa" : "Inativa"}</td>
+                <td>${escapeHtml(formatMonthlyChargeStatusLabel(charge.status))}</td>
               </tr>
             `,
           )
           .join("")
-      : `<tr><td colspan="6" class="empty">Nenhuma cobrança mensal cadastrada.</td></tr>`;
+      : `<tr><td colspan="7" class="empty">Nenhuma cobrança mensal cadastrada.</td></tr>`;
 
   const planningRowsHtml =
     planningRows.length > 0
@@ -4962,6 +6998,7 @@ function buildProjectPdfDocument(
               <thead>
                 <tr>
                   <th>Título</th>
+                  <th>Parcela</th>
                   <th>Valor</th>
                   <th>Dia vencimento</th>
                   <th>Início</th>

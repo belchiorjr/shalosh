@@ -32,6 +32,7 @@ type projectListRecord struct {
 	HasMonthlyMaintenance bool       `db:"has_monthly_maintenance"`
 	StartDate             *time.Time `db:"start_date"`
 	EndDate               *time.Time `db:"end_date"`
+	Status                string     `db:"status"`
 	Active                bool       `db:"active"`
 	ClientsCount          int        `db:"clients_count"`
 	RevenuesCount         int        `db:"revenues_count"`
@@ -53,6 +54,7 @@ type projectRecord struct {
 	HasMonthlyMaintenance bool       `db:"has_monthly_maintenance"`
 	StartDate             *time.Time `db:"start_date"`
 	EndDate               *time.Time `db:"end_date"`
+	Status                string     `db:"status"`
 	Active                bool       `db:"active"`
 	Created               time.Time  `db:"created"`
 	Updated               time.Time  `db:"updated"`
@@ -89,6 +91,13 @@ type projectClientRecord struct {
 	Role     string `db:"role"`
 }
 
+type projectManagerRecord struct {
+	UserID string `db:"user_id"`
+	Name   string `db:"name"`
+	Email  string `db:"email"`
+	Login  string `db:"login"`
+}
+
 type projectRevenueRecord struct {
 	ID          string     `db:"id"`
 	ProjectID   string     `db:"project_id"`
@@ -121,6 +130,8 @@ type projectMonthlyChargeRecord struct {
 	ProjectID   string     `db:"project_id"`
 	Title       string     `db:"title"`
 	Description string     `db:"description"`
+	Installment string     `db:"installment"`
+	Status      string     `db:"status"`
 	Amount      float64    `db:"amount"`
 	DueDay      int        `db:"due_day"`
 	StartsOn    *time.Time `db:"starts_on"`
@@ -145,19 +156,36 @@ type projectPhaseRecord struct {
 }
 
 type projectTaskRecord struct {
-	ID             string     `db:"id"`
-	ProjectID      string     `db:"project_id"`
-	ProjectPhaseID string     `db:"project_phase_id"`
-	Name           string     `db:"name"`
-	Description    string     `db:"description"`
-	Objective      string     `db:"objective"`
-	StartsOn       *time.Time `db:"starts_on"`
-	EndsOn         *time.Time `db:"ends_on"`
-	Position       int        `db:"position"`
-	Status         string     `db:"status"`
-	Active         bool       `db:"active"`
-	Created        time.Time  `db:"created"`
-	Updated        time.Time  `db:"updated"`
+	ID                  string     `db:"id"`
+	ProjectID           string     `db:"project_id"`
+	ProjectPhaseID      string     `db:"project_phase_id"`
+	ResponsibleUserID   string     `db:"responsible_user_id"`
+	ResponsibleUserName string     `db:"responsible_user_name"`
+	Name                string     `db:"name"`
+	Description         string     `db:"description"`
+	Objective           string     `db:"objective"`
+	StartsOn            *time.Time `db:"starts_on"`
+	EndsOn              *time.Time `db:"ends_on"`
+	Position            int        `db:"position"`
+	Status              string     `db:"status"`
+	Active              bool       `db:"active"`
+	Created             time.Time  `db:"created"`
+	Updated             time.Time  `db:"updated"`
+}
+
+type projectTaskCommentRecord struct {
+	ID                string    `db:"id"`
+	ProjectTaskID     string    `db:"project_task_id"`
+	ParentCommentID   string    `db:"parent_comment_id"`
+	UserID            string    `db:"user_id"`
+	ClientID          string    `db:"client_id"`
+	AuthorName        string    `db:"author_name"`
+	AuthorType        string    `db:"author_type"`
+	IsProjectManager  bool      `db:"is_project_manager"`
+	IsTaskResponsible bool      `db:"is_task_responsible"`
+	Comment           string    `db:"comment"`
+	Created           time.Time `db:"created"`
+	Updated           time.Time `db:"updated"`
 }
 
 type projectRelatedFileRecord struct {
@@ -201,19 +229,20 @@ func (r *ProjectRepository) ListProjects(
 	search := strings.TrimSpace(filter.Search)
 
 	query := `
-		SELECT
-		  project.id,
-		  project.name,
-		  project.objective,
-		  COALESCE(project_type.id::text, '') AS project_type_id,
-		  COALESCE(project_type.name, '') AS project_type_name,
-		  COALESCE(project_category.name, '') AS project_category_name,
-		  project.lifecycle_type,
-		  project.has_monthly_maintenance,
-		  project.start_date,
-		  project.end_date,
-		  project.active,
-		  (SELECT COUNT(*)::int FROM project_clients project_client WHERE project_client.project_id = project.id) AS clients_count,
+			SELECT
+			  project.id,
+			  project.name,
+			  project.objective,
+			  COALESCE(project_type.id::text, '') AS project_type_id,
+			  COALESCE(project_type.name, '') AS project_type_name,
+			  COALESCE(project_category.name, '') AS project_category_name,
+			  project.lifecycle_type,
+			  project.has_monthly_maintenance,
+			  project.start_date,
+			  project.end_date,
+			  project.status,
+			  project.active,
+			  (SELECT COUNT(*)::int FROM project_clients project_client WHERE project_client.project_id = project.id) AS clients_count,
 		  (SELECT COUNT(*)::int FROM project_revenues project_revenue WHERE project_revenue.project_id = project.id AND project_revenue.active = TRUE) AS revenues_count,
 		  (SELECT COUNT(*)::int FROM project_monthly_charges project_monthly_charge WHERE project_monthly_charge.project_id = project.id AND project_monthly_charge.active = TRUE) AS monthly_charges_count,
 		  (SELECT COUNT(*)::int FROM project_phases project_phase WHERE project_phase.project_id = project.id AND project_phase.active = TRUE) AS phases_count,
@@ -256,6 +285,7 @@ func (r *ProjectRepository) ListProjects(
 			HasMonthlyMaintenance: record.HasMonthlyMaintenance,
 			StartDate:             record.StartDate,
 			EndDate:               record.EndDate,
+			Status:                record.Status,
 			Active:                record.Active,
 			ClientsCount:          record.ClientsCount,
 			RevenuesCount:         record.RevenuesCount,
@@ -280,6 +310,11 @@ func (r *ProjectRepository) GetProjectDetail(
 	}
 
 	clients, err := r.listProjectClients(ctx, projectID)
+	if err != nil {
+		return usecase.ProjectDetail{}, err
+	}
+
+	managers, err := r.listProjectManagers(ctx, projectID)
 	if err != nil {
 		return usecase.ProjectDetail{}, err
 	}
@@ -315,10 +350,12 @@ func (r *ProjectRepository) GetProjectDetail(
 		HasMonthlyMaintenance: project.HasMonthlyMaintenance,
 		StartDate:             project.StartDate,
 		EndDate:               project.EndDate,
+		Status:                project.Status,
 		Active:                project.Active,
 		Created:               project.Created,
 		Updated:               project.Updated,
 		Clients:               clients,
+		Managers:              managers,
 		Revenues:              revenues,
 		MonthlyCharges:        monthlyCharges,
 		Phases:                phases,
@@ -380,6 +417,9 @@ func (r *ProjectRepository) CreateProject(
 	}
 
 	if err := r.replaceProjectClients(ctx, tx, projectID, input.ClientIDs); err != nil {
+		return usecase.ProjectDetail{}, err
+	}
+	if err := r.replaceProjectManagers(ctx, tx, projectID, input.ManagerUserIDs); err != nil {
 		return usecase.ProjectDetail{}, err
 	}
 
@@ -444,6 +484,109 @@ func (r *ProjectRepository) UpdateProject(
 	if input.ClientIDs != nil {
 		if err := r.replaceProjectClients(ctx, tx, input.ID, *input.ClientIDs); err != nil {
 			return usecase.ProjectDetail{}, err
+		}
+	}
+	if input.ManagerUserIDs != nil {
+		if err := r.replaceProjectManagers(ctx, tx, input.ID, *input.ManagerUserIDs); err != nil {
+			return usecase.ProjectDetail{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return usecase.ProjectDetail{}, err
+	}
+
+	return r.GetProjectDetail(ctx, input.ID)
+}
+
+func (r *ProjectRepository) UpdateProjectStatus(
+	ctx context.Context,
+	input usecase.UpdateProjectStatusInput,
+) (usecase.ProjectDetail, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return usecase.ProjectDetail{}, err
+	}
+	defer tx.Rollback()
+
+	var exists bool
+	if err := tx.GetContext(
+		ctx,
+		&exists,
+		"SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1)",
+		input.ID,
+	); err != nil {
+		return usecase.ProjectDetail{}, err
+	}
+	if !exists {
+		return usecase.ProjectDetail{}, usecase.ErrNotFound
+	}
+
+	resolvedStatus := input.Status
+	if input.Status == "concluido" {
+		var hasCompletedTasks bool
+		if err := tx.GetContext(
+			ctx,
+			&hasCompletedTasks,
+			`
+			SELECT EXISTS (
+			  SELECT 1
+			  FROM project_tasks task
+			  WHERE task.project_id = $1
+			    AND task.status = 'concluida'
+			)
+			`,
+			input.ID,
+		); err != nil {
+			return usecase.ProjectDetail{}, err
+		}
+
+		if hasCompletedTasks {
+			resolvedStatus = "andamento"
+		}
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		`
+		UPDATE projects
+		SET status = $1,
+		    active = CASE WHEN $1 = 'cancelado' THEN FALSE ELSE TRUE END,
+		    updated = NOW()
+		WHERE id = $2
+		`,
+		resolvedStatus,
+		input.ID,
+	); err != nil {
+		return usecase.ProjectDetail{}, mapProjectPersistenceError(err)
+	}
+
+	if resolvedStatus == "cancelado" {
+		if _, err := tx.ExecContext(
+			ctx,
+			`
+			UPDATE project_phases
+			SET active = FALSE,
+			    updated = NOW()
+			WHERE project_id = $1
+			`,
+			input.ID,
+		); err != nil {
+			return usecase.ProjectDetail{}, mapProjectPersistenceError(err)
+		}
+
+		if _, err := tx.ExecContext(
+			ctx,
+			`
+			UPDATE project_tasks
+			SET status = 'cancelada',
+			    active = FALSE,
+			    updated = NOW()
+			WHERE project_id = $1
+			`,
+			input.ID,
+		); err != nil {
+			return usecase.ProjectDetail{}, mapProjectPersistenceError(err)
 		}
 	}
 
@@ -769,6 +912,38 @@ func (r *ProjectRepository) CreateProjectRevenue(
 	return usecase.ProjectRevenue{}, usecase.ErrNotFound
 }
 
+func (r *ProjectRepository) UpdateProjectRevenueStatus(
+	ctx context.Context,
+	input usecase.UpdateProjectRevenueStatusInput,
+) error {
+	result, err := r.db.ExecContext(
+		ctx,
+		`
+		UPDATE project_revenues
+		SET status = $1,
+		    updated = NOW()
+		WHERE id = $2
+		  AND project_id = $3
+		`,
+		input.Status,
+		input.ID,
+		input.ProjectID,
+	)
+	if err != nil {
+		return mapProjectPersistenceError(err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return usecase.ErrNotFound
+	}
+
+	return nil
+}
+
 func (r *ProjectRepository) ListProjectMonthlyCharges(
 	ctx context.Context,
 	projectID string,
@@ -786,14 +961,16 @@ func (r *ProjectRepository) ListProjectMonthlyCharges(
 		ctx,
 		&records,
 		`
-		SELECT
-		  id,
-		  project_id,
-		  title,
-		  description,
-		  amount,
-		  due_day,
-		  starts_on,
+			SELECT
+			  id,
+			  project_id,
+			  title,
+			  description,
+			  installment,
+			  status,
+			  amount,
+			  due_day,
+			  starts_on,
 		  ends_on,
 		  active,
 		  created,
@@ -804,7 +981,37 @@ func (r *ProjectRepository) ListProjectMonthlyCharges(
 		`,
 		projectID,
 	); err != nil {
-		return nil, err
+		if !isUndefinedRelationOrColumn(err) {
+			return nil, err
+		}
+
+		// Fallback para bases antigas sem colunas installment/status.
+		if fallbackErr := r.db.SelectContext(
+			ctx,
+			&records,
+			`
+			SELECT
+			  id,
+			  project_id,
+			  title,
+			  description,
+			  '' AS installment,
+			  'pendente' AS status,
+			  amount,
+			  due_day,
+			  starts_on,
+			  ends_on,
+			  active,
+			  created,
+			  updated
+			FROM project_monthly_charges
+			WHERE project_id = $1
+			ORDER BY due_day ASC, created ASC, id ASC
+			`,
+			projectID,
+		); fallbackErr != nil {
+			return nil, fallbackErr
+		}
 	}
 
 	charges := make([]usecase.ProjectMonthlyCharge, 0, len(records))
@@ -814,6 +1021,8 @@ func (r *ProjectRepository) ListProjectMonthlyCharges(
 			ProjectID:   record.ProjectID,
 			Title:       record.Title,
 			Description: record.Description,
+			Installment: record.Installment,
+			Status:      record.Status,
 			Amount:      record.Amount,
 			DueDay:      record.DueDay,
 			StartsOn:    record.StartsOn,
@@ -831,15 +1040,17 @@ func (r *ProjectRepository) CreateProjectMonthlyCharge(
 	ctx context.Context,
 	input usecase.CreateProjectMonthlyChargeInput,
 ) (usecase.ProjectMonthlyCharge, error) {
-	var charge usecase.ProjectMonthlyCharge
+	var chargeRecord projectMonthlyChargeRecord
 	if err := r.db.GetContext(
 		ctx,
-		&charge,
+		&chargeRecord,
 		`
 		INSERT INTO project_monthly_charges (
 		  project_id,
 		  title,
 		  description,
+		  installment,
+		  status,
 		  amount,
 		  due_day,
 		  starts_on,
@@ -848,14 +1059,16 @@ func (r *ProjectRepository) CreateProjectMonthlyCharge(
 		  created,
 		  updated
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-		RETURNING
-		  id,
-		  project_id,
-		  title,
-		  description,
-		  amount,
-		  due_day,
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+			RETURNING
+			  id,
+			  project_id,
+			  title,
+			  description,
+			  installment,
+			  status,
+			  amount,
+			  due_day,
 		  starts_on,
 		  ends_on,
 		  active,
@@ -865,6 +1078,8 @@ func (r *ProjectRepository) CreateProjectMonthlyCharge(
 		input.ProjectID,
 		input.Title,
 		input.Description,
+		input.Installment,
+		input.Status,
 		input.Amount,
 		input.DueDay,
 		input.StartsOn,
@@ -874,7 +1089,285 @@ func (r *ProjectRepository) CreateProjectMonthlyCharge(
 		return usecase.ProjectMonthlyCharge{}, mapProjectPersistenceError(err)
 	}
 
-	return charge, nil
+	return usecase.ProjectMonthlyCharge{
+		ID:          chargeRecord.ID,
+		ProjectID:   chargeRecord.ProjectID,
+		Title:       chargeRecord.Title,
+		Description: chargeRecord.Description,
+		Installment: chargeRecord.Installment,
+		Status:      chargeRecord.Status,
+		Amount:      chargeRecord.Amount,
+		DueDay:      chargeRecord.DueDay,
+		StartsOn:    chargeRecord.StartsOn,
+		EndsOn:      chargeRecord.EndsOn,
+		Active:      chargeRecord.Active,
+		Created:     chargeRecord.Created,
+		Updated:     chargeRecord.Updated,
+	}, nil
+}
+
+func (r *ProjectRepository) UpdateProjectMonthlyCharge(
+	ctx context.Context,
+	input usecase.UpdateProjectMonthlyChargeInput,
+) (usecase.ProjectMonthlyCharge, error) {
+	var chargeRecord projectMonthlyChargeRecord
+	if err := r.db.GetContext(
+		ctx,
+		&chargeRecord,
+		`
+		UPDATE project_monthly_charges
+		SET title = $1,
+		    description = $2,
+		    installment = $3,
+		    status = $4,
+		    amount = $5,
+		    due_day = $6,
+		    starts_on = $7,
+		    ends_on = $8,
+		    active = $9,
+		    updated = NOW()
+		WHERE id = $10
+		  AND project_id = $11
+		  AND status = 'pendente'
+		RETURNING
+		  id,
+		  project_id,
+		  title,
+		  description,
+		  installment,
+		  status,
+		  amount,
+		  due_day,
+		  starts_on,
+		  ends_on,
+		  active,
+		  created,
+		  updated
+		`,
+		input.Title,
+		input.Description,
+		input.Installment,
+		input.Status,
+		input.Amount,
+		input.DueDay,
+		input.StartsOn,
+		input.EndsOn,
+		input.Active,
+		input.ID,
+		input.ProjectID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			exists, existsErr := r.projectMonthlyChargeExists(ctx, input.ID, input.ProjectID)
+			if existsErr != nil {
+				return usecase.ProjectMonthlyCharge{}, existsErr
+			}
+			if exists {
+				return usecase.ProjectMonthlyCharge{}, usecase.ErrConflict
+			}
+			return usecase.ProjectMonthlyCharge{}, usecase.ErrNotFound
+		}
+		return usecase.ProjectMonthlyCharge{}, mapProjectPersistenceError(err)
+	}
+
+	return usecase.ProjectMonthlyCharge{
+		ID:          chargeRecord.ID,
+		ProjectID:   chargeRecord.ProjectID,
+		Title:       chargeRecord.Title,
+		Description: chargeRecord.Description,
+		Installment: chargeRecord.Installment,
+		Status:      chargeRecord.Status,
+		Amount:      chargeRecord.Amount,
+		DueDay:      chargeRecord.DueDay,
+		StartsOn:    chargeRecord.StartsOn,
+		EndsOn:      chargeRecord.EndsOn,
+		Active:      chargeRecord.Active,
+		Created:     chargeRecord.Created,
+		Updated:     chargeRecord.Updated,
+	}, nil
+}
+
+func (r *ProjectRepository) UpdateProjectMonthlyChargeStatus(
+	ctx context.Context,
+	input usecase.UpdateProjectMonthlyChargeStatusInput,
+) (usecase.ProjectMonthlyCharge, error) {
+	var chargeRecord projectMonthlyChargeRecord
+	if err := r.db.GetContext(
+		ctx,
+		&chargeRecord,
+		`
+		UPDATE project_monthly_charges
+		SET status = $1,
+		    updated = NOW()
+		WHERE id = $2
+		  AND project_id = $3
+		  AND status = 'pendente'
+		RETURNING
+		  id,
+		  project_id,
+		  title,
+		  description,
+		  installment,
+		  status,
+		  amount,
+		  due_day,
+		  starts_on,
+		  ends_on,
+		  active,
+		  created,
+		  updated
+		`,
+		input.Status,
+		input.ID,
+		input.ProjectID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			exists, existsErr := r.projectMonthlyChargeExists(ctx, input.ID, input.ProjectID)
+			if existsErr != nil {
+				return usecase.ProjectMonthlyCharge{}, existsErr
+			}
+			if exists {
+				return usecase.ProjectMonthlyCharge{}, usecase.ErrConflict
+			}
+			return usecase.ProjectMonthlyCharge{}, usecase.ErrNotFound
+		}
+		return usecase.ProjectMonthlyCharge{}, mapProjectPersistenceError(err)
+	}
+
+	return usecase.ProjectMonthlyCharge{
+		ID:          chargeRecord.ID,
+		ProjectID:   chargeRecord.ProjectID,
+		Title:       chargeRecord.Title,
+		Description: chargeRecord.Description,
+		Installment: chargeRecord.Installment,
+		Status:      chargeRecord.Status,
+		Amount:      chargeRecord.Amount,
+		DueDay:      chargeRecord.DueDay,
+		StartsOn:    chargeRecord.StartsOn,
+		EndsOn:      chargeRecord.EndsOn,
+		Active:      chargeRecord.Active,
+		Created:     chargeRecord.Created,
+		Updated:     chargeRecord.Updated,
+	}, nil
+}
+
+func (r *ProjectRepository) UpdateProjectMonthlyChargeAmount(
+	ctx context.Context,
+	input usecase.UpdateProjectMonthlyChargeAmountInput,
+) (usecase.ProjectMonthlyCharge, error) {
+	var chargeRecord projectMonthlyChargeRecord
+	if err := r.db.GetContext(
+		ctx,
+		&chargeRecord,
+		`
+		UPDATE project_monthly_charges
+		SET amount = $1,
+		    updated = NOW()
+		WHERE id = $2
+		  AND project_id = $3
+		  AND status = 'pendente'
+		RETURNING
+		  id,
+		  project_id,
+		  title,
+		  description,
+		  installment,
+		  status,
+		  amount,
+		  due_day,
+		  starts_on,
+		  ends_on,
+		  active,
+		  created,
+		  updated
+		`,
+		input.Amount,
+		input.ID,
+		input.ProjectID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			exists, existsErr := r.projectMonthlyChargeExists(ctx, input.ID, input.ProjectID)
+			if existsErr != nil {
+				return usecase.ProjectMonthlyCharge{}, existsErr
+			}
+			if exists {
+				return usecase.ProjectMonthlyCharge{}, usecase.ErrConflict
+			}
+			return usecase.ProjectMonthlyCharge{}, usecase.ErrNotFound
+		}
+		return usecase.ProjectMonthlyCharge{}, mapProjectPersistenceError(err)
+	}
+
+	return usecase.ProjectMonthlyCharge{
+		ID:          chargeRecord.ID,
+		ProjectID:   chargeRecord.ProjectID,
+		Title:       chargeRecord.Title,
+		Description: chargeRecord.Description,
+		Installment: chargeRecord.Installment,
+		Status:      chargeRecord.Status,
+		Amount:      chargeRecord.Amount,
+		DueDay:      chargeRecord.DueDay,
+		StartsOn:    chargeRecord.StartsOn,
+		EndsOn:      chargeRecord.EndsOn,
+		Active:      chargeRecord.Active,
+		Created:     chargeRecord.Created,
+		Updated:     chargeRecord.Updated,
+	}, nil
+}
+
+func (r *ProjectRepository) DeleteProjectMonthlyCharge(
+	ctx context.Context,
+	projectID string,
+	monthlyChargeID string,
+) error {
+	result, err := r.db.ExecContext(
+		ctx,
+		`
+		DELETE FROM project_monthly_charges
+		WHERE id = $1
+		  AND project_id = $2
+		`,
+		monthlyChargeID,
+		projectID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return usecase.ErrNotFound
+	}
+
+	return nil
+}
+
+func (r *ProjectRepository) projectMonthlyChargeExists(
+	ctx context.Context,
+	chargeID string,
+	projectID string,
+) (bool, error) {
+	var exists bool
+	if err := r.db.GetContext(
+		ctx,
+		&exists,
+		`
+		SELECT EXISTS (
+		  SELECT 1
+		  FROM project_monthly_charges
+		  WHERE id = $1
+		    AND project_id = $2
+		)
+		`,
+		chargeID,
+		projectID,
+	); err != nil {
+		return false, err
+	}
+
+	return exists, nil
 }
 
 func (r *ProjectRepository) ListProjectPhases(
@@ -1117,6 +1610,7 @@ func (r *ProjectRepository) CreateProjectTask(
 		INSERT INTO project_tasks (
 		  project_id,
 		  project_phase_id,
+		  responsible_user_id,
 		  name,
 		  description,
 		  objective,
@@ -1131,21 +1625,23 @@ func (r *ProjectRepository) CreateProjectTask(
 		VALUES (
 		  $1,
 		  NULLIF($2, '')::uuid,
-		  $3,
+		  NULLIF($3, '')::uuid,
 		  $4,
 		  $5,
 		  $6,
-		  $7,
-		  $8,
-		  $9,
-		  $10,
-		  NOW(),
-		  NOW()
-		)
+			  $7,
+			  $8,
+			  $9,
+			  $10,
+			  $11,
+			  NOW(),
+			  NOW()
+			)
 		RETURNING id
 		`,
 		input.ProjectID,
 		input.ProjectPhaseID,
+		input.ResponsibleUserID,
 		input.Name,
 		input.Description,
 		input.Objective,
@@ -1254,19 +1750,21 @@ func (r *ProjectRepository) UpdateProjectTask(
 		UPDATE project_tasks
 		SET
 		  project_phase_id = NULLIF($1, '')::uuid,
-		  name = $2,
-		  description = $3,
-		  objective = $4,
-		  starts_on = $5,
-		  ends_on = $6,
-		  position = $7,
-		  status = $8,
-		  active = $9,
+		  responsible_user_id = NULLIF($2, '')::uuid,
+		  name = $3,
+		  description = $4,
+		  objective = $5,
+		  starts_on = $6,
+		  ends_on = $7,
+		  position = $8,
+		  status = $9,
+		  active = $10,
 		  updated = NOW()
-		WHERE id = $10
-		  AND project_id = $11
+		WHERE id = $11
+		  AND project_id = $12
 		`,
 		input.ProjectPhaseID,
+		input.ResponsibleUserID,
 		input.Name,
 		input.Description,
 		input.Objective,
@@ -1302,6 +1800,170 @@ func (r *ProjectRepository) UpdateProjectTask(
 	return usecase.ProjectTask{}, usecase.ErrNotFound
 }
 
+func (r *ProjectRepository) ListProjectTaskComments(
+	ctx context.Context,
+	projectID string,
+	taskID string,
+) ([]usecase.ProjectTaskComment, error) {
+	var taskExists bool
+	if err := r.db.GetContext(
+		ctx,
+		&taskExists,
+		`
+		SELECT EXISTS (
+		  SELECT 1
+		  FROM project_tasks
+		  WHERE id = $1
+		    AND project_id = $2
+		)
+		`,
+		taskID,
+		projectID,
+	); err != nil {
+		return nil, err
+	}
+	if !taskExists {
+		return nil, usecase.ErrNotFound
+	}
+
+	records, err := r.listProjectTaskCommentRecords(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.withTaskCommentFiles(ctx, records)
+}
+
+func (r *ProjectRepository) CreateProjectTaskComment(
+	ctx context.Context,
+	input usecase.CreateProjectTaskCommentInput,
+) (usecase.ProjectTaskComment, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return usecase.ProjectTaskComment{}, err
+	}
+	defer tx.Rollback()
+
+	var taskExists bool
+	if err := tx.GetContext(
+		ctx,
+		&taskExists,
+		`
+		SELECT EXISTS (
+		  SELECT 1
+		  FROM project_tasks
+		  WHERE id = $1
+		    AND project_id = $2
+		)
+		`,
+		input.ProjectTaskID,
+		input.ProjectID,
+	); err != nil {
+		return usecase.ProjectTaskComment{}, err
+	}
+	if !taskExists {
+		return usecase.ProjectTaskComment{}, usecase.ErrNotFound
+	}
+
+	if input.ParentCommentID != "" {
+		var parentCommentExists bool
+		if err := tx.GetContext(
+			ctx,
+			&parentCommentExists,
+			`
+			SELECT EXISTS (
+			  SELECT 1
+			  FROM project_task_comments
+			  WHERE id = $1
+			    AND project_task_id = $2
+			)
+			`,
+			input.ParentCommentID,
+			input.ProjectTaskID,
+		); err != nil {
+			return usecase.ProjectTaskComment{}, err
+		}
+		if !parentCommentExists {
+			return usecase.ProjectTaskComment{}, usecase.ErrNotFound
+		}
+	}
+
+	var commentID string
+	if err := tx.GetContext(
+		ctx,
+		&commentID,
+		`
+		INSERT INTO project_task_comments (
+		  project_task_id,
+		  parent_comment_id,
+		  user_id,
+		  client_id,
+		  comment,
+		  created,
+		  updated
+		)
+		VALUES (
+		  $1,
+		  NULLIF($2, '')::uuid,
+		  NULLIF($3, '')::uuid,
+		  NULLIF($4, '')::uuid,
+		  $5,
+		  NOW(),
+		  NOW()
+		)
+		RETURNING id
+		`,
+		input.ProjectTaskID,
+		input.ParentCommentID,
+		input.AuthorUserID,
+		input.AuthorClientID,
+		input.Comment,
+	); err != nil {
+		return usecase.ProjectTaskComment{}, mapProjectPersistenceError(err)
+	}
+
+	for _, file := range input.Files {
+		if _, err := tx.ExecContext(
+			ctx,
+			`
+			INSERT INTO project_task_comment_files (
+			  project_task_comment_id,
+			  file_name,
+			  file_key,
+			  content_type,
+			  notes,
+			  created,
+			  updated
+			)
+			VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+			`,
+			commentID,
+			file.FileName,
+			file.FileKey,
+			file.ContentType,
+			file.Notes,
+		); err != nil {
+			return usecase.ProjectTaskComment{}, mapProjectPersistenceError(err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return usecase.ProjectTaskComment{}, err
+	}
+
+	comments, err := r.ListProjectTaskComments(ctx, input.ProjectID, input.ProjectTaskID)
+	if err != nil {
+		return usecase.ProjectTaskComment{}, err
+	}
+	for _, comment := range comments {
+		if comment.ID == commentID {
+			return comment, nil
+		}
+	}
+
+	return usecase.ProjectTaskComment{}, usecase.ErrNotFound
+}
+
 func (r *ProjectRepository) getProjectRecordByID(
 	ctx context.Context,
 	projectID string,
@@ -1311,20 +1973,21 @@ func (r *ProjectRepository) getProjectRecordByID(
 		ctx,
 		&project,
 		`
-		SELECT
-		  project.id,
-		  project.name,
-		  project.objective,
-		  COALESCE(project_type.id::text, '') AS project_type_id,
-		  COALESCE(project_type.name, '') AS project_type_name,
-		  COALESCE(project_category.name, '') AS project_category_name,
-		  project.lifecycle_type,
-		  project.has_monthly_maintenance,
-		  project.start_date,
-		  project.end_date,
-		  project.active,
-		  project.created,
-		  project.updated
+			SELECT
+			  project.id,
+			  project.name,
+			  project.objective,
+			  COALESCE(project_type.id::text, '') AS project_type_id,
+			  COALESCE(project_type.name, '') AS project_type_name,
+			  COALESCE(project_category.name, '') AS project_category_name,
+			  project.lifecycle_type,
+			  project.has_monthly_maintenance,
+			  project.start_date,
+			  project.end_date,
+			  project.status,
+			  project.active,
+			  project.created,
+			  project.updated
 		FROM projects project
 		LEFT JOIN project_types project_type ON project_type.id = project.project_type_id
 		LEFT JOIN project_categories project_category ON project_category.id = project_type.category_id
@@ -1379,6 +2042,46 @@ func (r *ProjectRepository) listProjectClients(
 	}
 
 	return clients, nil
+}
+
+func (r *ProjectRepository) listProjectManagers(
+	ctx context.Context,
+	projectID string,
+) ([]usecase.ProjectManager, error) {
+	var records []projectManagerRecord
+	if err := r.db.SelectContext(
+		ctx,
+		&records,
+		`
+		SELECT
+		  project_manager.user_id,
+		  user_record.name,
+		  user_record.email,
+		  user_record.login
+		FROM project_managers project_manager
+		INNER JOIN users user_record ON user_record.id = project_manager.user_id
+		WHERE project_manager.project_id = $1
+		ORDER BY user_record.name ASC, user_record.id ASC
+		`,
+		projectID,
+	); err != nil {
+		if isUndefinedRelationOrColumn(err) {
+			return []usecase.ProjectManager{}, nil
+		}
+		return nil, err
+	}
+
+	managers := make([]usecase.ProjectManager, 0, len(records))
+	for _, record := range records {
+		managers = append(managers, usecase.ProjectManager{
+			UserID: record.UserID,
+			Name:   record.Name,
+			Email:  record.Email,
+			Login:  record.Login,
+		})
+	}
+
+	return managers, nil
 }
 
 func (r *ProjectRepository) listProjectRevenueRecords(
@@ -1608,26 +2311,61 @@ func (r *ProjectRepository) listProjectTaskRecords(
 		&records,
 		`
 		SELECT
-		  id,
-		  project_id,
-		  COALESCE(project_phase_id::text, '') AS project_phase_id,
-		  name,
-		  description,
-		  objective,
-		  starts_on,
-		  ends_on,
-		  position,
-		  status,
-		  active,
-		  created,
-		  updated
-			FROM project_tasks
-			WHERE project_id = $1
-			ORDER BY starts_on ASC NULLS LAST, position ASC, created ASC, id ASC
-			`,
+		  task.id,
+		  task.project_id,
+		  COALESCE(task.project_phase_id::text, '') AS project_phase_id,
+		  COALESCE(task.responsible_user_id::text, '') AS responsible_user_id,
+		  COALESCE(user_record.name, '') AS responsible_user_name,
+		  task.name,
+		  task.description,
+		  task.objective,
+		  task.starts_on,
+		  task.ends_on,
+		  task.position,
+		  task.status,
+		  task.active,
+		  task.created,
+		  task.updated
+		FROM project_tasks task
+		LEFT JOIN users user_record ON user_record.id = task.responsible_user_id
+		WHERE task.project_id = $1
+		ORDER BY task.starts_on ASC NULLS LAST, task.position ASC, task.created ASC, task.id ASC
+		`,
 		projectID,
 	); err != nil {
-		return nil, err
+		if !isUndefinedRelationOrColumn(err) {
+			return nil, err
+		}
+
+		// Fallback para bases antigas sem coluna responsible_user_id.
+		if fallbackErr := r.db.SelectContext(
+			ctx,
+			&records,
+			`
+			SELECT
+			  task.id,
+			  task.project_id,
+			  COALESCE(task.project_phase_id::text, '') AS project_phase_id,
+			  '' AS responsible_user_id,
+			  '' AS responsible_user_name,
+			  task.name,
+			  task.description,
+			  task.objective,
+			  task.starts_on,
+			  task.ends_on,
+			  task.position,
+			  task.status,
+			  task.active,
+			  task.created,
+			  task.updated
+			FROM project_tasks task
+			WHERE task.project_id = $1
+			ORDER BY task.starts_on ASC NULLS LAST, task.position ASC, task.created ASC, task.id ASC
+			`,
+			projectID,
+		); fallbackErr != nil {
+			return nil, fallbackErr
+		}
 	}
 
 	return records, nil
@@ -1645,20 +2383,22 @@ func (r *ProjectRepository) withTaskFiles(
 		taskIndexByID[record.ID] = len(tasks)
 		taskIDs = append(taskIDs, record.ID)
 		tasks = append(tasks, usecase.ProjectTask{
-			ID:             record.ID,
-			ProjectID:      record.ProjectID,
-			ProjectPhaseID: record.ProjectPhaseID,
-			Name:           record.Name,
-			Description:    record.Description,
-			Objective:      record.Objective,
-			StartsOn:       record.StartsOn,
-			EndsOn:         record.EndsOn,
-			Position:       record.Position,
-			Status:         record.Status,
-			Active:         record.Active,
-			Files:          []usecase.ProjectRelatedFile{},
-			Created:        record.Created,
-			Updated:        record.Updated,
+			ID:                  record.ID,
+			ProjectID:           record.ProjectID,
+			ProjectPhaseID:      record.ProjectPhaseID,
+			ResponsibleUserID:   record.ResponsibleUserID,
+			ResponsibleUserName: record.ResponsibleUserName,
+			Name:                record.Name,
+			Description:         record.Description,
+			Objective:           record.Objective,
+			StartsOn:            record.StartsOn,
+			EndsOn:              record.EndsOn,
+			Position:            record.Position,
+			Status:              record.Status,
+			Active:              record.Active,
+			Files:               []usecase.ProjectRelatedFile{},
+			Created:             record.Created,
+			Updated:             record.Updated,
 		})
 	}
 
@@ -1708,6 +2448,131 @@ func (r *ProjectRepository) withTaskFiles(
 	return tasks, nil
 }
 
+func (r *ProjectRepository) listProjectTaskCommentRecords(
+	ctx context.Context,
+	taskID string,
+) ([]projectTaskCommentRecord, error) {
+	var records []projectTaskCommentRecord
+	if err := r.db.SelectContext(
+		ctx,
+		&records,
+		`
+		SELECT
+		  comment.id,
+		  comment.project_task_id,
+		  COALESCE(comment.parent_comment_id::text, '') AS parent_comment_id,
+		  COALESCE(comment.user_id::text, '') AS user_id,
+		  COALESCE(comment.client_id::text, '') AS client_id,
+		  COALESCE(user_record.name, client_record.name, '') AS author_name,
+		  CASE
+		    WHEN comment.client_id IS NOT NULL THEN 'client'
+		    ELSE 'user'
+		  END AS author_type,
+		  EXISTS (
+		    SELECT 1
+		    FROM project_tasks task_record
+		    WHERE task_record.id = comment.project_task_id
+		      AND task_record.responsible_user_id = comment.user_id
+		  ) AS is_task_responsible,
+		  EXISTS (
+		    SELECT 1
+		    FROM project_tasks task_record
+		    INNER JOIN project_managers project_manager
+		      ON project_manager.project_id = task_record.project_id
+		    WHERE task_record.id = comment.project_task_id
+		      AND project_manager.user_id = comment.user_id
+		  ) AS is_project_manager,
+		  comment.comment,
+		  comment.created,
+		  comment.updated
+		FROM project_task_comments comment
+		LEFT JOIN users user_record ON user_record.id = comment.user_id
+		LEFT JOIN clients client_record ON client_record.id = comment.client_id
+		WHERE comment.project_task_id = $1
+		ORDER BY comment.created ASC, comment.id ASC
+		`,
+		taskID,
+	); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+func (r *ProjectRepository) withTaskCommentFiles(
+	ctx context.Context,
+	commentRecords []projectTaskCommentRecord,
+) ([]usecase.ProjectTaskComment, error) {
+	comments := make([]usecase.ProjectTaskComment, 0, len(commentRecords))
+	commentIDs := make([]string, 0, len(commentRecords))
+	commentIndexByID := make(map[string]int, len(commentRecords))
+
+	for _, record := range commentRecords {
+		commentIndexByID[record.ID] = len(comments)
+		commentIDs = append(commentIDs, record.ID)
+		comments = append(comments, usecase.ProjectTaskComment{
+			ID:                record.ID,
+			ProjectTaskID:     record.ProjectTaskID,
+			ParentCommentID:   record.ParentCommentID,
+			UserID:            record.UserID,
+			ClientID:          record.ClientID,
+			AuthorName:        record.AuthorName,
+			AuthorType:        record.AuthorType,
+			IsProjectManager:  record.IsProjectManager,
+			IsTaskResponsible: record.IsTaskResponsible,
+			Comment:           record.Comment,
+			Files:             []usecase.ProjectRelatedFile{},
+			Created:           record.Created,
+			Updated:           record.Updated,
+		})
+	}
+
+	if len(commentIDs) == 0 {
+		return comments, nil
+	}
+
+	var fileRecords []projectRelatedFileRecord
+	if err := r.db.SelectContext(
+		ctx,
+		&fileRecords,
+		`
+		SELECT
+		  id,
+		  project_task_comment_id AS parent_id,
+		  file_name,
+		  file_key,
+		  content_type,
+		  notes,
+		  created,
+		  updated
+		FROM project_task_comment_files
+		WHERE project_task_comment_id = ANY($1::uuid[])
+		ORDER BY created ASC, id ASC
+		`,
+		pq.Array(commentIDs),
+	); err != nil {
+		return nil, err
+	}
+
+	for _, fileRecord := range fileRecords {
+		index, exists := commentIndexByID[fileRecord.ParentID]
+		if !exists {
+			continue
+		}
+		comments[index].Files = append(comments[index].Files, usecase.ProjectRelatedFile{
+			ID:          fileRecord.ID,
+			FileName:    fileRecord.FileName,
+			FileKey:     fileRecord.FileKey,
+			ContentType: fileRecord.ContentType,
+			Notes:       fileRecord.Notes,
+			Created:     fileRecord.Created,
+			Updated:     fileRecord.Updated,
+		})
+	}
+
+	return comments, nil
+}
+
 func (r *ProjectRepository) replaceProjectClients(
 	ctx context.Context,
 	tx *sqlx.Tx,
@@ -1737,6 +2602,42 @@ func (r *ProjectRepository) replaceProjectClients(
 			`,
 			projectID,
 			clientID,
+		); err != nil {
+			return mapProjectPersistenceError(err)
+		}
+	}
+
+	return nil
+}
+
+func (r *ProjectRepository) replaceProjectManagers(
+	ctx context.Context,
+	tx *sqlx.Tx,
+	projectID string,
+	managerUserIDs []string,
+) error {
+	if _, err := tx.ExecContext(
+		ctx,
+		"DELETE FROM project_managers WHERE project_id = $1",
+		projectID,
+	); err != nil {
+		return err
+	}
+
+	for _, userID := range managerUserIDs {
+		if _, err := tx.ExecContext(
+			ctx,
+			`
+			INSERT INTO project_managers (
+			  project_id,
+			  user_id,
+			  created,
+			  updated
+			)
+			VALUES ($1, $2, NOW(), NOW())
+			`,
+			projectID,
+			userID,
 		); err != nil {
 			return mapProjectPersistenceError(err)
 		}
@@ -2121,6 +3022,15 @@ func isProjectTimelineTaskCancelled(status string) bool {
 	return strings.ToLower(strings.TrimSpace(status)) == "cancelada"
 }
 
+func isUndefinedRelationOrColumn(err error) bool {
+	var pgErr *pq.Error
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+
+	return pgErr.Code == "42P01" || pgErr.Code == "42703"
+}
+
 func mapProjectPersistenceError(err error) error {
 	var pgErr *pq.Error
 	if errors.As(err, &pgErr) {
@@ -2142,6 +3052,12 @@ func mapProjectPersistenceError(err error) error {
 				return usecase.ErrProjectCategoryNotFound
 			case "project_clients_client_id_fkey":
 				return usecase.ErrProjectClientsNotFound
+			case "project_managers_user_id_fkey":
+				return usecase.ErrProjectManagersNotFound
+			case "project_tasks_responsible_user_id_fkey":
+				return usecase.ErrInvalidInput
+			case "project_task_comments_user_id_fkey", "project_task_comments_client_id_fkey":
+				return usecase.ErrInvalidInput
 			default:
 				return usecase.ErrNotFound
 			}

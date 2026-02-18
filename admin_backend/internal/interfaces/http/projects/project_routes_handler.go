@@ -25,6 +25,24 @@ func (h *Handler) HandleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(segments) == 4 {
+		resource := strings.ToLower(strings.TrimSpace(segments[1]))
+		resourceID := strings.TrimSpace(segments[2])
+		nestedResource := strings.ToLower(strings.TrimSpace(segments[3]))
+		if resourceID == "" {
+			h.respondError(w, http.StatusNotFound, "route not found")
+			return
+		}
+
+		if resource == "tasks" && nestedResource == "comments" {
+			h.handleProjectTaskComments(w, r, projectID, resourceID)
+			return
+		}
+
+		h.respondError(w, http.StatusNotFound, "route not found")
+		return
+	}
+
 	if len(segments) == 3 {
 		resource := strings.ToLower(strings.TrimSpace(segments[1]))
 		resourceID := strings.TrimSpace(segments[2])
@@ -38,13 +56,17 @@ func (h *Handler) HandleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 			h.handleProjectTaskByID(w, r, projectID, resourceID)
 		case "phases":
 			h.handleProjectPhaseByID(w, r, projectID, resourceID)
+		case "revenues":
+			h.handleProjectRevenueByID(w, r, projectID, resourceID)
+		case "monthly-charges":
+			h.handleProjectMonthlyChargeByID(w, r, projectID, resourceID)
 		default:
 			h.respondError(w, http.StatusNotFound, "route not found")
 		}
 		return
 	}
 
-	if len(segments) > 3 {
+	if len(segments) > 4 {
 		h.respondError(w, http.StatusNotFound, "route not found")
 		return
 	}
@@ -56,6 +78,8 @@ func (h *Handler) HandleProjectRoutes(w http.ResponseWriter, r *http.Request) {
 		h.handleProjectExportPDF(w, r, projectID)
 	case "recalculate":
 		h.handleProjectRecalculate(w, r, projectID)
+	case "status":
+		h.handleProjectStatus(w, r, projectID)
 	case "revenues":
 		h.handleProjectRevenues(w, r, projectID)
 	case "monthly-charges":

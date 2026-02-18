@@ -27,6 +27,7 @@ var (
 	ErrProjectTypeNotFound     = errors.New("project type not found")
 	ErrProjectCategoryNotFound = errors.New("project category not found")
 	ErrProjectClientsNotFound  = errors.New("one or more project clients do not exist")
+	ErrProjectManagersNotFound = errors.New("one or more project managers do not exist")
 
 	ErrZipCodeUnavailable = errors.New("zipcode service unavailable")
 	ErrZipCodeNotFound    = errors.New("zipcode not found")

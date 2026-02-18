@@ -33,6 +33,8 @@ func (h *Handler) handleProjectUsecaseError(
 		h.respondError(w, http.StatusBadRequest, "project category not found")
 	case errors.Is(err, usecase.ErrProjectClientsNotFound):
 		h.respondError(w, http.StatusBadRequest, "one or more clients do not exist")
+	case errors.Is(err, usecase.ErrProjectManagersNotFound):
+		h.respondError(w, http.StatusBadRequest, "one or more managers do not exist")
 	default:
 		h.respondError(w, http.StatusInternalServerError, "unexpected error")
 	}

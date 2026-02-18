@@ -27,16 +27,17 @@ func (h *Handler) handleProjectTasks(w http.ResponseWriter, r *http.Request, pro
 		}
 
 		var payload struct {
-			ProjectPhaseID string               `json:"projectPhaseId"`
-			Name           string               `json:"name"`
-			Description    string               `json:"description"`
-			Objective      string               `json:"objective"`
-			StartsOn       string               `json:"startsOn"`
-			EndsOn         string               `json:"endsOn"`
-			Position       int                  `json:"position"`
-			Status         string               `json:"status"`
-			Active         *bool                `json:"active"`
-			Files          []relatedFilePayload `json:"files"`
+			ProjectPhaseID    string               `json:"projectPhaseId"`
+			ResponsibleUserID string               `json:"responsibleUserId"`
+			Name              string               `json:"name"`
+			Description       string               `json:"description"`
+			Objective         string               `json:"objective"`
+			StartsOn          string               `json:"startsOn"`
+			EndsOn            string               `json:"endsOn"`
+			Position          int                  `json:"position"`
+			Status            string               `json:"status"`
+			Active            *bool                `json:"active"`
+			Files             []relatedFilePayload `json:"files"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			h.respondError(w, http.StatusBadRequest, "invalid json")
@@ -62,17 +63,18 @@ func (h *Handler) handleProjectTasks(w http.ResponseWriter, r *http.Request, pro
 		task, err := h.projectService.CreateProjectTask(
 			r.Context(),
 			usecase.CreateProjectTaskInput{
-				ProjectID:      projectID,
-				ProjectPhaseID: payload.ProjectPhaseID,
-				Name:           payload.Name,
-				Description:    payload.Description,
-				Objective:      payload.Objective,
-				StartsOn:       startsOn,
-				EndsOn:         endsOn,
-				Position:       payload.Position,
-				Status:         payload.Status,
-				Active:         active,
-				Files:          mapRelatedFilePayloads(payload.Files),
+				ProjectID:         projectID,
+				ProjectPhaseID:    payload.ProjectPhaseID,
+				ResponsibleUserID: payload.ResponsibleUserID,
+				Name:              payload.Name,
+				Description:       payload.Description,
+				Objective:         payload.Objective,
+				StartsOn:          startsOn,
+				EndsOn:            endsOn,
+				Position:          payload.Position,
+				Status:            payload.Status,
+				Active:            active,
+				Files:             mapRelatedFilePayloads(payload.Files),
 			},
 		)
 		if err != nil {

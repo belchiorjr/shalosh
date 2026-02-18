@@ -11,6 +11,13 @@ var allowedProjectLifecycleTypes = map[string]struct{}{
 	"recorrente": {},
 }
 
+var allowedProjectStatuses = map[string]struct{}{
+	"planejamento": {},
+	"andamento":    {},
+	"concluido":    {},
+	"cancelado":    {},
+}
+
 var allowedProjectRevenueStatuses = map[string]struct{}{
 	"pendente":  {},
 	"recebido":  {},
@@ -24,11 +31,18 @@ var allowedProjectTaskStatuses = map[string]struct{}{
 	"cancelada": {},
 }
 
+var allowedProjectMonthlyChargeStatuses = map[string]struct{}{
+	"pendente":  {},
+	"pago":      {},
+	"cancelada": {},
+}
+
 type ProjectRepository interface {
 	ListProjects(ctx context.Context, filter ProjectListFilter) ([]ProjectListItem, error)
 	GetProjectDetail(ctx context.Context, projectID string) (ProjectDetail, error)
 	CreateProject(ctx context.Context, input CreateProjectInput) (ProjectDetail, error)
 	UpdateProject(ctx context.Context, input UpdateProjectInput) (ProjectDetail, error)
+	UpdateProjectStatus(ctx context.Context, input UpdateProjectStatusInput) (ProjectDetail, error)
 	DeleteProject(ctx context.Context, projectID string) error
 	RecalculateProjectTimeline(ctx context.Context, projectID string) (ProjectDetail, error)
 
@@ -39,9 +53,26 @@ type ProjectRepository interface {
 
 	ListProjectRevenues(ctx context.Context, projectID string) ([]ProjectRevenue, error)
 	CreateProjectRevenue(ctx context.Context, input CreateProjectRevenueInput) (ProjectRevenue, error)
+	UpdateProjectRevenueStatus(
+		ctx context.Context,
+		input UpdateProjectRevenueStatusInput,
+	) error
 
 	ListProjectMonthlyCharges(ctx context.Context, projectID string) ([]ProjectMonthlyCharge, error)
 	CreateProjectMonthlyCharge(ctx context.Context, input CreateProjectMonthlyChargeInput) (ProjectMonthlyCharge, error)
+	UpdateProjectMonthlyCharge(
+		ctx context.Context,
+		input UpdateProjectMonthlyChargeInput,
+	) (ProjectMonthlyCharge, error)
+	UpdateProjectMonthlyChargeStatus(
+		ctx context.Context,
+		input UpdateProjectMonthlyChargeStatusInput,
+	) (ProjectMonthlyCharge, error)
+	UpdateProjectMonthlyChargeAmount(
+		ctx context.Context,
+		input UpdateProjectMonthlyChargeAmountInput,
+	) (ProjectMonthlyCharge, error)
+	DeleteProjectMonthlyCharge(ctx context.Context, projectID, monthlyChargeID string) error
 
 	ListProjectPhases(ctx context.Context, projectID string) ([]ProjectPhase, error)
 	CreateProjectPhase(ctx context.Context, input CreateProjectPhaseInput) (ProjectPhase, error)
@@ -50,6 +81,15 @@ type ProjectRepository interface {
 	ListProjectTasks(ctx context.Context, projectID string) ([]ProjectTask, error)
 	CreateProjectTask(ctx context.Context, input CreateProjectTaskInput) (ProjectTask, error)
 	UpdateProjectTask(ctx context.Context, input UpdateProjectTaskInput) (ProjectTask, error)
+	ListProjectTaskComments(
+		ctx context.Context,
+		projectID string,
+		taskID string,
+	) ([]ProjectTaskComment, error)
+	CreateProjectTaskComment(
+		ctx context.Context,
+		input CreateProjectTaskCommentInput,
+	) (ProjectTaskComment, error)
 }
 
 type ProjectService struct {
@@ -101,6 +141,13 @@ type ProjectClient struct {
 	Role     string `json:"role"`
 }
 
+type ProjectManager struct {
+	UserID string `json:"userId"`
+	Name   string `json:"name"`
+	Email  string `json:"email"`
+	Login  string `json:"login"`
+}
+
 type ProjectRelatedFile struct {
 	ID          string    `json:"id"`
 	FileName    string    `json:"fileName"`
@@ -144,6 +191,8 @@ type ProjectMonthlyCharge struct {
 	ProjectID   string     `json:"projectId"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
+	Installment string     `json:"installment"`
+	Status      string     `json:"status"`
 	Amount      float64    `json:"amount"`
 	DueDay      int        `json:"dueDay"`
 	StartsOn    *time.Time `json:"startsOn,omitempty"`
@@ -169,20 +218,38 @@ type ProjectPhase struct {
 }
 
 type ProjectTask struct {
-	ID             string               `json:"id"`
-	ProjectID      string               `json:"projectId"`
-	ProjectPhaseID string               `json:"projectPhaseId,omitempty"`
-	Name           string               `json:"name"`
-	Description    string               `json:"description"`
-	Objective      string               `json:"objective"`
-	StartsOn       *time.Time           `json:"startsOn,omitempty"`
-	EndsOn         *time.Time           `json:"endsOn,omitempty"`
-	Position       int                  `json:"position"`
-	Status         string               `json:"status"`
-	Active         bool                 `json:"active"`
-	Files          []ProjectRelatedFile `json:"files"`
-	Created        time.Time            `json:"created"`
-	Updated        time.Time            `json:"updated"`
+	ID                  string               `json:"id"`
+	ProjectID           string               `json:"projectId"`
+	ProjectPhaseID      string               `json:"projectPhaseId,omitempty"`
+	ResponsibleUserID   string               `json:"responsibleUserId,omitempty"`
+	ResponsibleUserName string               `json:"responsibleUserName"`
+	Name                string               `json:"name"`
+	Description         string               `json:"description"`
+	Objective           string               `json:"objective"`
+	StartsOn            *time.Time           `json:"startsOn,omitempty"`
+	EndsOn              *time.Time           `json:"endsOn,omitempty"`
+	Position            int                  `json:"position"`
+	Status              string               `json:"status"`
+	Active              bool                 `json:"active"`
+	Files               []ProjectRelatedFile `json:"files"`
+	Created             time.Time            `json:"created"`
+	Updated             time.Time            `json:"updated"`
+}
+
+type ProjectTaskComment struct {
+	ID                string               `json:"id"`
+	ProjectTaskID     string               `json:"projectTaskId"`
+	ParentCommentID   string               `json:"parentCommentId,omitempty"`
+	UserID            string               `json:"userId,omitempty"`
+	ClientID          string               `json:"clientId,omitempty"`
+	AuthorName        string               `json:"authorName"`
+	AuthorType        string               `json:"authorType"`
+	IsProjectManager  bool                 `json:"isProjectManager"`
+	IsTaskResponsible bool                 `json:"isTaskResponsible"`
+	Comment           string               `json:"comment"`
+	Files             []ProjectRelatedFile `json:"files"`
+	Created           time.Time            `json:"created"`
+	Updated           time.Time            `json:"updated"`
 }
 
 type ProjectListItem struct {
@@ -196,6 +263,7 @@ type ProjectListItem struct {
 	HasMonthlyMaintenance bool       `json:"hasMonthlyMaintenance"`
 	StartDate             *time.Time `json:"startDate,omitempty"`
 	EndDate               *time.Time `json:"endDate,omitempty"`
+	Status                string     `json:"status"`
 	Active                bool       `json:"active"`
 	ClientsCount          int        `json:"clientsCount"`
 	RevenuesCount         int        `json:"revenuesCount"`
@@ -217,10 +285,12 @@ type ProjectDetail struct {
 	HasMonthlyMaintenance bool                   `json:"hasMonthlyMaintenance"`
 	StartDate             *time.Time             `json:"startDate,omitempty"`
 	EndDate               *time.Time             `json:"endDate,omitempty"`
+	Status                string                 `json:"status"`
 	Active                bool                   `json:"active"`
 	Created               time.Time              `json:"created"`
 	Updated               time.Time              `json:"updated"`
 	Clients               []ProjectClient        `json:"clients"`
+	Managers              []ProjectManager       `json:"managers"`
 	Revenues              []ProjectRevenue       `json:"revenues"`
 	MonthlyCharges        []ProjectMonthlyCharge `json:"monthlyCharges"`
 	Phases                []ProjectPhase         `json:"phases"`
@@ -237,6 +307,7 @@ type CreateProjectInput struct {
 	EndDate               *time.Time
 	Active                bool
 	ClientIDs             []string
+	ManagerUserIDs        []string
 }
 
 type UpdateProjectInput struct {
@@ -250,6 +321,12 @@ type UpdateProjectInput struct {
 	EndDate               *time.Time
 	Active                *bool
 	ClientIDs             *[]string
+	ManagerUserIDs        *[]string
+}
+
+type UpdateProjectStatusInput struct {
+	ID     string
+	Status string
 }
 
 type CreateProjectTypeInput struct {
@@ -290,15 +367,49 @@ type CreateProjectRevenueInput struct {
 	Receipts    []CreateProjectRevenueReceiptInput
 }
 
+type UpdateProjectRevenueStatusInput struct {
+	ID        string
+	ProjectID string
+	Status    string
+}
+
 type CreateProjectMonthlyChargeInput struct {
 	ProjectID   string
 	Title       string
 	Description string
+	Installment string
+	Status      string
 	Amount      float64
 	DueDay      int
 	StartsOn    *time.Time
 	EndsOn      *time.Time
 	Active      bool
+}
+
+type UpdateProjectMonthlyChargeInput struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Installment string
+	Status      string
+	Amount      float64
+	DueDay      int
+	StartsOn    *time.Time
+	EndsOn      *time.Time
+	Active      bool
+}
+
+type UpdateProjectMonthlyChargeStatusInput struct {
+	ID        string
+	ProjectID string
+	Status    string
+}
+
+type UpdateProjectMonthlyChargeAmountInput struct {
+	ID        string
+	ProjectID string
+	Amount    float64
 }
 
 type CreateProjectFileInput struct {
@@ -333,31 +444,43 @@ type UpdateProjectPhaseInput struct {
 }
 
 type CreateProjectTaskInput struct {
-	ProjectID      string
-	ProjectPhaseID string
-	Name           string
-	Description    string
-	Objective      string
-	StartsOn       *time.Time
-	EndsOn         *time.Time
-	Position       int
-	Status         string
-	Active         bool
-	Files          []CreateProjectFileInput
+	ProjectID         string
+	ProjectPhaseID    string
+	ResponsibleUserID string
+	Name              string
+	Description       string
+	Objective         string
+	StartsOn          *time.Time
+	EndsOn            *time.Time
+	Position          int
+	Status            string
+	Active            bool
+	Files             []CreateProjectFileInput
 }
 
 type UpdateProjectTaskInput struct {
-	ID             string
-	ProjectID      string
-	ProjectPhaseID string
-	Name           string
-	Description    string
-	Objective      string
-	StartsOn       *time.Time
-	EndsOn         *time.Time
-	Position       int
-	Status         string
-	Active         bool
+	ID                string
+	ProjectID         string
+	ProjectPhaseID    string
+	ResponsibleUserID string
+	Name              string
+	Description       string
+	Objective         string
+	StartsOn          *time.Time
+	EndsOn            *time.Time
+	Position          int
+	Status            string
+	Active            bool
+}
+
+type CreateProjectTaskCommentInput struct {
+	ProjectID       string
+	ProjectTaskID   string
+	ParentCommentID string
+	AuthorUserID    string
+	AuthorClientID  string
+	Comment         string
+	Files           []CreateProjectFileInput
 }
 
 func (s *ProjectService) ListProjects(
@@ -406,6 +529,18 @@ func (s *ProjectService) UpdateProject(
 	}
 
 	return s.repo.UpdateProject(ctx, normalizedInput)
+}
+
+func (s *ProjectService) UpdateProjectStatus(
+	ctx context.Context,
+	input UpdateProjectStatusInput,
+) (ProjectDetail, error) {
+	normalizedInput, err := normalizeUpdateProjectStatusInput(input)
+	if err != nil {
+		return ProjectDetail{}, err
+	}
+
+	return s.repo.UpdateProjectStatus(ctx, normalizedInput)
 }
 
 func (s *ProjectService) DeleteProject(
@@ -504,6 +639,18 @@ func (s *ProjectService) CreateProjectRevenue(
 	return s.repo.CreateProjectRevenue(ctx, normalizedInput)
 }
 
+func (s *ProjectService) UpdateProjectRevenueStatus(
+	ctx context.Context,
+	input UpdateProjectRevenueStatusInput,
+) error {
+	normalizedInput, err := normalizeUpdateProjectRevenueStatusInput(input)
+	if err != nil {
+		return err
+	}
+
+	return s.repo.UpdateProjectRevenueStatus(ctx, normalizedInput)
+}
+
 func (s *ProjectService) ListProjectMonthlyCharges(
 	ctx context.Context,
 	projectID string,
@@ -526,6 +673,56 @@ func (s *ProjectService) CreateProjectMonthlyCharge(
 	}
 
 	return s.repo.CreateProjectMonthlyCharge(ctx, normalizedInput)
+}
+
+func (s *ProjectService) UpdateProjectMonthlyCharge(
+	ctx context.Context,
+	input UpdateProjectMonthlyChargeInput,
+) (ProjectMonthlyCharge, error) {
+	normalizedInput, err := normalizeUpdateProjectMonthlyChargeInput(input)
+	if err != nil {
+		return ProjectMonthlyCharge{}, err
+	}
+
+	return s.repo.UpdateProjectMonthlyCharge(ctx, normalizedInput)
+}
+
+func (s *ProjectService) UpdateProjectMonthlyChargeStatus(
+	ctx context.Context,
+	input UpdateProjectMonthlyChargeStatusInput,
+) (ProjectMonthlyCharge, error) {
+	normalizedInput, err := normalizeUpdateProjectMonthlyChargeStatusInput(input)
+	if err != nil {
+		return ProjectMonthlyCharge{}, err
+	}
+
+	return s.repo.UpdateProjectMonthlyChargeStatus(ctx, normalizedInput)
+}
+
+func (s *ProjectService) UpdateProjectMonthlyChargeAmount(
+	ctx context.Context,
+	input UpdateProjectMonthlyChargeAmountInput,
+) (ProjectMonthlyCharge, error) {
+	normalizedInput, err := normalizeUpdateProjectMonthlyChargeAmountInput(input)
+	if err != nil {
+		return ProjectMonthlyCharge{}, err
+	}
+
+	return s.repo.UpdateProjectMonthlyChargeAmount(ctx, normalizedInput)
+}
+
+func (s *ProjectService) DeleteProjectMonthlyCharge(
+	ctx context.Context,
+	projectID string,
+	monthlyChargeID string,
+) error {
+	normalizedProjectID := strings.TrimSpace(projectID)
+	normalizedMonthlyChargeID := strings.TrimSpace(monthlyChargeID)
+	if normalizedProjectID == "" || normalizedMonthlyChargeID == "" {
+		return ErrInvalidInput
+	}
+
+	return s.repo.DeleteProjectMonthlyCharge(ctx, normalizedProjectID, normalizedMonthlyChargeID)
 }
 
 func (s *ProjectService) ListProjectPhases(
@@ -600,6 +797,32 @@ func (s *ProjectService) UpdateProjectTask(
 	return s.repo.UpdateProjectTask(ctx, normalizedInput)
 }
 
+func (s *ProjectService) ListProjectTaskComments(
+	ctx context.Context,
+	projectID string,
+	taskID string,
+) ([]ProjectTaskComment, error) {
+	normalizedProjectID := strings.TrimSpace(projectID)
+	normalizedTaskID := strings.TrimSpace(taskID)
+	if normalizedProjectID == "" || normalizedTaskID == "" {
+		return nil, ErrInvalidInput
+	}
+
+	return s.repo.ListProjectTaskComments(ctx, normalizedProjectID, normalizedTaskID)
+}
+
+func (s *ProjectService) CreateProjectTaskComment(
+	ctx context.Context,
+	input CreateProjectTaskCommentInput,
+) (ProjectTaskComment, error) {
+	normalizedInput, err := normalizeCreateProjectTaskCommentInput(input)
+	if err != nil {
+		return ProjectTaskComment{}, err
+	}
+
+	return s.repo.CreateProjectTaskComment(ctx, normalizedInput)
+}
+
 func (s *ProjectService) RecalculateProjectTimeline(
 	ctx context.Context,
 	projectID string,
@@ -623,6 +846,7 @@ func normalizeCreateProjectInput(input CreateProjectInput) (CreateProjectInput, 
 		EndDate:               input.EndDate,
 		Active:                input.Active,
 		ClientIDs:             uniqueTrimmedIDs(input.ClientIDs),
+		ManagerUserIDs:        uniqueTrimmedIDs(input.ManagerUserIDs),
 	}
 	if normalizedInput.Name == "" {
 		return CreateProjectInput{}, ErrInvalidInput
@@ -651,10 +875,15 @@ func normalizeUpdateProjectInput(input UpdateProjectInput) (UpdateProjectInput, 
 		EndDate:               input.EndDate,
 		Active:                input.Active,
 		ClientIDs:             nil,
+		ManagerUserIDs:        nil,
 	}
 	if input.ClientIDs != nil {
 		normalizedIDs := uniqueTrimmedIDs(*input.ClientIDs)
 		normalizedInput.ClientIDs = &normalizedIDs
+	}
+	if input.ManagerUserIDs != nil {
+		normalizedIDs := uniqueTrimmedIDs(*input.ManagerUserIDs)
+		normalizedInput.ManagerUserIDs = &normalizedIDs
 	}
 	if normalizedInput.ID == "" || normalizedInput.Name == "" {
 		return UpdateProjectInput{}, ErrInvalidInput
@@ -666,6 +895,23 @@ func normalizeUpdateProjectInput(input UpdateProjectInput) (UpdateProjectInput, 
 		normalizedInput.EndDate != nil &&
 		normalizedInput.EndDate.Before(*normalizedInput.StartDate) {
 		return UpdateProjectInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
+func normalizeUpdateProjectStatusInput(
+	input UpdateProjectStatusInput,
+) (UpdateProjectStatusInput, error) {
+	normalizedInput := UpdateProjectStatusInput{
+		ID:     strings.TrimSpace(input.ID),
+		Status: normalizeProjectStatus(input.Status),
+	}
+	if normalizedInput.ID == "" || normalizedInput.Status == "" {
+		return UpdateProjectStatusInput{}, ErrInvalidInput
+	}
+	if _, ok := allowedProjectStatuses[normalizedInput.Status]; !ok {
+		return UpdateProjectStatusInput{}, ErrInvalidInput
 	}
 
 	return normalizedInput, nil
@@ -715,6 +961,24 @@ func normalizeCreateProjectRevenueInput(
 	return normalizedInput, nil
 }
 
+func normalizeUpdateProjectRevenueStatusInput(
+	input UpdateProjectRevenueStatusInput,
+) (UpdateProjectRevenueStatusInput, error) {
+	normalizedInput := UpdateProjectRevenueStatusInput{
+		ID:        strings.TrimSpace(input.ID),
+		ProjectID: strings.TrimSpace(input.ProjectID),
+		Status:    strings.ToLower(strings.TrimSpace(input.Status)),
+	}
+	if normalizedInput.ID == "" || normalizedInput.ProjectID == "" || normalizedInput.Status == "" {
+		return UpdateProjectRevenueStatusInput{}, ErrInvalidInput
+	}
+	if _, ok := allowedProjectRevenueStatuses[normalizedInput.Status]; !ok {
+		return UpdateProjectRevenueStatusInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
 func normalizeCreateProjectMonthlyChargeInput(
 	input CreateProjectMonthlyChargeInput,
 ) (CreateProjectMonthlyChargeInput, error) {
@@ -722,11 +986,17 @@ func normalizeCreateProjectMonthlyChargeInput(
 	if dueDay == 0 {
 		dueDay = 1
 	}
+	status := normalizeProjectMonthlyChargeStatus(input.Status)
+	if status == "" {
+		return CreateProjectMonthlyChargeInput{}, ErrInvalidInput
+	}
 
 	normalizedInput := CreateProjectMonthlyChargeInput{
 		ProjectID:   strings.TrimSpace(input.ProjectID),
 		Title:       strings.TrimSpace(input.Title),
 		Description: strings.TrimSpace(input.Description),
+		Installment: strings.TrimSpace(input.Installment),
+		Status:      status,
 		Amount:      input.Amount,
 		DueDay:      dueDay,
 		StartsOn:    input.StartsOn,
@@ -748,6 +1018,92 @@ func normalizeCreateProjectMonthlyChargeInput(
 	}
 
 	return normalizedInput, nil
+}
+
+func normalizeUpdateProjectMonthlyChargeAmountInput(
+	input UpdateProjectMonthlyChargeAmountInput,
+) (UpdateProjectMonthlyChargeAmountInput, error) {
+	normalizedInput := UpdateProjectMonthlyChargeAmountInput{
+		ID:        strings.TrimSpace(input.ID),
+		ProjectID: strings.TrimSpace(input.ProjectID),
+		Amount:    input.Amount,
+	}
+	if normalizedInput.ID == "" || normalizedInput.ProjectID == "" {
+		return UpdateProjectMonthlyChargeAmountInput{}, ErrInvalidInput
+	}
+	if normalizedInput.Amount < 0 {
+		return UpdateProjectMonthlyChargeAmountInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
+func normalizeUpdateProjectMonthlyChargeInput(
+	input UpdateProjectMonthlyChargeInput,
+) (UpdateProjectMonthlyChargeInput, error) {
+	status := normalizeProjectMonthlyChargeStatus(input.Status)
+	if status == "" {
+		return UpdateProjectMonthlyChargeInput{}, ErrInvalidInput
+	}
+
+	normalizedInput := UpdateProjectMonthlyChargeInput{
+		ID:          strings.TrimSpace(input.ID),
+		ProjectID:   strings.TrimSpace(input.ProjectID),
+		Title:       strings.TrimSpace(input.Title),
+		Description: strings.TrimSpace(input.Description),
+		Installment: strings.TrimSpace(input.Installment),
+		Status:      status,
+		Amount:      input.Amount,
+		DueDay:      input.DueDay,
+		StartsOn:    input.StartsOn,
+		EndsOn:      input.EndsOn,
+		Active:      input.Active,
+	}
+	if normalizedInput.ID == "" ||
+		normalizedInput.ProjectID == "" ||
+		normalizedInput.Title == "" {
+		return UpdateProjectMonthlyChargeInput{}, ErrInvalidInput
+	}
+	if normalizedInput.Amount < 0 ||
+		normalizedInput.DueDay < 1 ||
+		normalizedInput.DueDay > 31 {
+		return UpdateProjectMonthlyChargeInput{}, ErrInvalidInput
+	}
+	if normalizedInput.StartsOn != nil &&
+		normalizedInput.EndsOn != nil &&
+		normalizedInput.EndsOn.Before(*normalizedInput.StartsOn) {
+		return UpdateProjectMonthlyChargeInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
+func normalizeUpdateProjectMonthlyChargeStatusInput(
+	input UpdateProjectMonthlyChargeStatusInput,
+) (UpdateProjectMonthlyChargeStatusInput, error) {
+	status := normalizeProjectMonthlyChargeStatus(input.Status)
+	normalizedInput := UpdateProjectMonthlyChargeStatusInput{
+		ID:        strings.TrimSpace(input.ID),
+		ProjectID: strings.TrimSpace(input.ProjectID),
+		Status:    status,
+	}
+	if normalizedInput.ID == "" || normalizedInput.ProjectID == "" || normalizedInput.Status == "" {
+		return UpdateProjectMonthlyChargeStatusInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
+func normalizeProjectMonthlyChargeStatus(value string) string {
+	normalizedValue := strings.ToLower(strings.TrimSpace(value))
+	if normalizedValue == "" {
+		normalizedValue = "pendente"
+	}
+	if _, ok := allowedProjectMonthlyChargeStatuses[normalizedValue]; !ok {
+		return ""
+	}
+
+	return normalizedValue
 }
 
 func normalizeCreateProjectPhaseInput(
@@ -810,17 +1166,18 @@ func normalizeCreateProjectTaskInput(
 	status := normalizeProjectTaskStatus(input.Status)
 
 	normalizedInput := CreateProjectTaskInput{
-		ProjectID:      strings.TrimSpace(input.ProjectID),
-		ProjectPhaseID: strings.TrimSpace(input.ProjectPhaseID),
-		Name:           strings.TrimSpace(input.Name),
-		Description:    strings.TrimSpace(input.Description),
-		Objective:      strings.TrimSpace(input.Objective),
-		StartsOn:       input.StartsOn,
-		EndsOn:         input.EndsOn,
-		Position:       input.Position,
-		Status:         status,
-		Active:         input.Active,
-		Files:          normalizeProjectFileInputs(input.Files),
+		ProjectID:         strings.TrimSpace(input.ProjectID),
+		ProjectPhaseID:    strings.TrimSpace(input.ProjectPhaseID),
+		ResponsibleUserID: strings.TrimSpace(input.ResponsibleUserID),
+		Name:              strings.TrimSpace(input.Name),
+		Description:       strings.TrimSpace(input.Description),
+		Objective:         strings.TrimSpace(input.Objective),
+		StartsOn:          input.StartsOn,
+		EndsOn:            input.EndsOn,
+		Position:          input.Position,
+		Status:            status,
+		Active:            input.Active,
+		Files:             normalizeProjectFileInputs(input.Files),
 	}
 	if normalizedInput.ProjectID == "" || normalizedInput.Name == "" {
 		return CreateProjectTaskInput{}, ErrInvalidInput
@@ -843,17 +1200,18 @@ func normalizeUpdateProjectTaskInput(
 	status := normalizeProjectTaskStatus(input.Status)
 
 	normalizedInput := UpdateProjectTaskInput{
-		ID:             strings.TrimSpace(input.ID),
-		ProjectID:      strings.TrimSpace(input.ProjectID),
-		ProjectPhaseID: strings.TrimSpace(input.ProjectPhaseID),
-		Name:           strings.TrimSpace(input.Name),
-		Description:    strings.TrimSpace(input.Description),
-		Objective:      strings.TrimSpace(input.Objective),
-		StartsOn:       input.StartsOn,
-		EndsOn:         input.EndsOn,
-		Position:       input.Position,
-		Status:         status,
-		Active:         input.Active,
+		ID:                strings.TrimSpace(input.ID),
+		ProjectID:         strings.TrimSpace(input.ProjectID),
+		ProjectPhaseID:    strings.TrimSpace(input.ProjectPhaseID),
+		ResponsibleUserID: strings.TrimSpace(input.ResponsibleUserID),
+		Name:              strings.TrimSpace(input.Name),
+		Description:       strings.TrimSpace(input.Description),
+		Objective:         strings.TrimSpace(input.Objective),
+		StartsOn:          input.StartsOn,
+		EndsOn:            input.EndsOn,
+		Position:          input.Position,
+		Status:            status,
+		Active:            input.Active,
 	}
 	if normalizedInput.ID == "" || normalizedInput.ProjectID == "" || normalizedInput.Name == "" {
 		return UpdateProjectTaskInput{}, ErrInvalidInput
@@ -865,6 +1223,33 @@ func normalizeUpdateProjectTaskInput(
 		normalizedInput.EndsOn != nil &&
 		normalizedInput.EndsOn.Before(*normalizedInput.StartsOn) {
 		return UpdateProjectTaskInput{}, ErrInvalidInput
+	}
+
+	return normalizedInput, nil
+}
+
+func normalizeCreateProjectTaskCommentInput(
+	input CreateProjectTaskCommentInput,
+) (CreateProjectTaskCommentInput, error) {
+	normalizedInput := CreateProjectTaskCommentInput{
+		ProjectID:       strings.TrimSpace(input.ProjectID),
+		ProjectTaskID:   strings.TrimSpace(input.ProjectTaskID),
+		ParentCommentID: strings.TrimSpace(input.ParentCommentID),
+		AuthorUserID:    strings.TrimSpace(input.AuthorUserID),
+		AuthorClientID:  strings.TrimSpace(input.AuthorClientID),
+		Comment:         strings.TrimSpace(input.Comment),
+		Files:           normalizeProjectFileInputs(input.Files),
+	}
+	if normalizedInput.ProjectID == "" ||
+		normalizedInput.ProjectTaskID == "" ||
+		normalizedInput.Comment == "" {
+		return CreateProjectTaskCommentInput{}, ErrInvalidInput
+	}
+	if normalizedInput.AuthorUserID == "" && normalizedInput.AuthorClientID == "" {
+		return CreateProjectTaskCommentInput{}, ErrInvalidInput
+	}
+	if normalizedInput.AuthorUserID != "" && normalizedInput.AuthorClientID != "" {
+		return CreateProjectTaskCommentInput{}, ErrInvalidInput
 	}
 
 	return normalizedInput, nil
@@ -891,6 +1276,22 @@ func normalizeProjectLifecycleType(value string) string {
 	}
 
 	return lifecycleType
+}
+
+func normalizeProjectStatus(value string) string {
+	status := strings.ToLower(strings.TrimSpace(value))
+	switch status {
+	case "concluida":
+		return "concluido"
+	case "cancelada":
+		return "cancelado"
+	case "em_andamento", "em andamento":
+		return "andamento"
+	case "planejado", "planejada":
+		return "planejamento"
+	default:
+		return status
+	}
 }
 
 func normalizeProjectTaskStatus(value string) string {

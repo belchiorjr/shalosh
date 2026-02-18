@@ -156,7 +156,7 @@ func buildProjectPDFLines(exportPayload ProjectExport, style resolvedProjectPDFS
 		lines = append(lines, "Nenhuma cobranca mensal cadastrada.")
 	} else {
 		for _, charge := range project.MonthlyCharges {
-			lines = append(lines, fmt.Sprintf("- %s | valor: %.2f | vencimento: dia %d | inicio: %s | fim: %s | status: %s", fallbackProjectText(charge.Title), charge.Amount, charge.DueDay, formatProjectDate(charge.StartsOn), formatProjectDate(charge.EndsOn), formatProjectActiveLabel(charge.Active)))
+			lines = append(lines, fmt.Sprintf("- %s | valor: %.2f | vencimento: dia %d | inicio: %s | fim: %s | status: %s", fallbackProjectText(charge.Title), charge.Amount, charge.DueDay, formatProjectDate(charge.StartsOn), formatProjectDate(charge.EndsOn), formatProjectMonthlyChargeStatus(charge.Status)))
 		}
 	}
 
@@ -635,6 +635,17 @@ func formatProjectRevenueStatus(value string) string {
 		return "Recebido"
 	case "cancelado":
 		return "Cancelado"
+	default:
+		return "Pendente"
+	}
+}
+
+func formatProjectMonthlyChargeStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "pago", "recebido":
+		return "Pago"
+	case "cancelada", "cancelado":
+		return "Cancelada"
 	default:
 		return "Pendente"
 	}

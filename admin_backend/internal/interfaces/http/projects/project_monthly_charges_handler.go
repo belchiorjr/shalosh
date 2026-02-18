@@ -3,6 +3,7 @@ package projects
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"admin_backend/internal/usecase"
 )
@@ -33,6 +34,8 @@ func (h *Handler) handleProjectMonthlyCharges(
 		var payload struct {
 			Title       string  `json:"title"`
 			Description string  `json:"description"`
+			Installment string  `json:"installment"`
+			Status      string  `json:"status"`
 			Amount      float64 `json:"amount"`
 			DueDay      int     `json:"dueDay"`
 			StartsOn    string  `json:"startsOn"`
@@ -60,12 +63,31 @@ func (h *Handler) handleProjectMonthlyCharges(
 			active = *payload.Active
 		}
 
+		if strings.TrimSpace(payload.Title) == "" {
+			h.respondError(w, http.StatusBadRequest, "title is required")
+			return
+		}
+		if payload.Amount < 0 {
+			h.respondError(w, http.StatusBadRequest, "amount must be greater than or equal to 0")
+			return
+		}
+		if payload.DueDay < 1 || payload.DueDay > 31 {
+			h.respondError(w, http.StatusBadRequest, "dueDay must be between 1 and 31")
+			return
+		}
+		if startsOn != nil && endsOn != nil && endsOn.Before(*startsOn) {
+			h.respondError(w, http.StatusBadRequest, "endsOn must be on or after startsOn")
+			return
+		}
+
 		charge, err := h.projectService.CreateProjectMonthlyCharge(
 			r.Context(),
 			usecase.CreateProjectMonthlyChargeInput{
 				ProjectID:   projectID,
 				Title:       payload.Title,
 				Description: payload.Description,
+				Installment: payload.Installment,
+				Status:      payload.Status,
 				Amount:      payload.Amount,
 				DueDay:      payload.DueDay,
 				StartsOn:    startsOn,
@@ -74,7 +96,7 @@ func (h *Handler) handleProjectMonthlyCharges(
 			},
 		)
 		if err != nil {
-			h.handleProjectUsecaseError(w, err, "title is required")
+			h.handleProjectUsecaseError(w, err, "invalid monthly charge input")
 			return
 		}
 

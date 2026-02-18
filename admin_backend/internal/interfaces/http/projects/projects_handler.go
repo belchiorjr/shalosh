@@ -51,6 +51,7 @@ func (h *Handler) HandleProjects(w http.ResponseWriter, r *http.Request) {
 			EndDate               string   `json:"endDate"`
 			Active                *bool    `json:"active"`
 			ClientIDs             []string `json:"clientIds"`
+			ManagerUserIDs        []string `json:"managerUserIds"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			h.respondError(w, http.StatusBadRequest, "invalid json")
@@ -87,6 +88,7 @@ func (h *Handler) HandleProjects(w http.ResponseWriter, r *http.Request) {
 			EndDate:               endDate,
 			Active:                active,
 			ClientIDs:             payload.ClientIDs,
+			ManagerUserIDs:        payload.ManagerUserIDs,
 		})
 		if err != nil {
 			h.handleProjectUsecaseError(w, err, "name is required")

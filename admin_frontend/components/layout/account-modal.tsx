@@ -130,6 +130,9 @@ export function AccountModal({
       size="2xl"
       placement="center"
       scrollBehavior="inside"
+      classNames={{
+        base: "max-h-[90vh]",
+      }}
     >
       <ModalContent>
         {(closeModal) => (
@@ -143,7 +146,7 @@ export function AccountModal({
                 Conta do Usuário
               </span>
             </ModalHeader>
-            <ModalBody className="gap-4">
+            <ModalBody className="max-h-[70vh] gap-4 overflow-y-auto pr-1">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground/60">
                 Dados do usuário logado
               </p>

@@ -20,15 +20,16 @@ func (h *Handler) handleProjectTaskByID(
 		}
 
 		var payload struct {
-			ProjectPhaseID string `json:"projectPhaseId"`
-			Name           string `json:"name"`
-			Description    string `json:"description"`
-			Objective      string `json:"objective"`
-			StartsOn       string `json:"startsOn"`
-			EndsOn         string `json:"endsOn"`
-			Position       int    `json:"position"`
-			Status         string `json:"status"`
-			Active         *bool  `json:"active"`
+			ProjectPhaseID    string `json:"projectPhaseId"`
+			ResponsibleUserID string `json:"responsibleUserId"`
+			Name              string `json:"name"`
+			Description       string `json:"description"`
+			Objective         string `json:"objective"`
+			StartsOn          string `json:"startsOn"`
+			EndsOn            string `json:"endsOn"`
+			Position          int    `json:"position"`
+			Status            string `json:"status"`
+			Active            *bool  `json:"active"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			h.respondError(w, http.StatusBadRequest, "invalid json")
@@ -54,17 +55,18 @@ func (h *Handler) handleProjectTaskByID(
 		task, err := h.projectService.UpdateProjectTask(
 			r.Context(),
 			usecase.UpdateProjectTaskInput{
-				ID:             taskID,
-				ProjectID:      projectID,
-				ProjectPhaseID: payload.ProjectPhaseID,
-				Name:           payload.Name,
-				Description:    payload.Description,
-				Objective:      payload.Objective,
-				StartsOn:       startsOn,
-				EndsOn:         endsOn,
-				Position:       payload.Position,
-				Status:         payload.Status,
-				Active:         active,
+				ID:                taskID,
+				ProjectID:         projectID,
+				ProjectPhaseID:    payload.ProjectPhaseID,
+				ResponsibleUserID: payload.ResponsibleUserID,
+				Name:              payload.Name,
+				Description:       payload.Description,
+				Objective:         payload.Objective,
+				StartsOn:          startsOn,
+				EndsOn:            endsOn,
+				Position:          payload.Position,
+				Status:            payload.Status,
+				Active:            active,
 			},
 		)
 		if err != nil {
