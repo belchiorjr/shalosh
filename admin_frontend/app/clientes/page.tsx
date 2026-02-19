@@ -1455,7 +1455,7 @@ export default function ClientesPage() {
                   <label className="flex flex-col gap-1.5 text-sm text-foreground/80">
                     <span className="px-1 text-foreground/70">Tipo de via</span>
                     <select
-                      className="h-14 rounded-xl border border-default-200 bg-content1 px-3 text-sm text-foreground shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className="h-14 rounded-xl border border-default-200 bg-content1 px-3 text-sm text-foreground shadow-[0_1px_1px_rgba(0,0,0,0.08)] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
                       value={addressForm.streetType}
                       onChange={(event) => {
                         const streetType = normalizeStreetType(event.target.value);

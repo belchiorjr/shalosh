@@ -1,13 +1,7 @@
-import { Fira_Code as FontMono, Quicksand as FontSans } from "next/font/google";
+export const fontSans = {
+  variable: "",
+} as const;
 
-export const fontSans = FontSans({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-  variable: "--font-sans",
-});
-
-export const fontMono = FontMono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-});
+export const fontMono = {
+  variable: "",
+} as const;

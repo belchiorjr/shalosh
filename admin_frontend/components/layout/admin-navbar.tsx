@@ -152,16 +152,16 @@ export function AdminNavbar({ onOpenSidebar }: AdminNavbarProps) {
               <MaterialSymbol name="menu" className="text-[22px]" />
             </Button>
 
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" className="flex shrink-0 items-center">
               <img
                 src="/shalosh_marca_x.svg"
                 alt="Shalosh"
-                className="h-8 w-auto dark:hidden"
+                className="h-9 w-auto max-w-[190px] object-contain dark:hidden"
               />
               <img
                 src="/shalosh_marca_x_dark.svg"
                 alt="Shalosh"
-                className="hidden h-8 w-auto dark:block"
+                className="hidden h-9 w-auto max-w-[190px] object-contain dark:block"
               />
             </Link>
           </div>

@@ -42,7 +42,7 @@ export default function RootLayout({
         />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Metrophobic&family=Parkinsans&family=Antic&family=Ubuntu+Sans&family=Anaheim&family=Arima&family=Bellota&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Metrophobic&family=Parkinsans&family=Antic&family=Ubuntu+Sans&family=Anaheim&family=Arima&family=Bellota&display=swap"
         />
       </head>
       <body

@@ -9,6 +9,7 @@ import { MaterialSymbol } from "@/components/material-symbol";
 const mainMenuItems = [
   { href: "/", label: "Painel", icon: "dashboard" },
   { href: "/clientes", label: "Clientes", icon: "groups" },
+  { href: "/solicitacoes", label: "Solicitações", icon: "support_agent" },
   { href: "/projetos", label: "Projetos", icon: "workspaces" },
 ];
 

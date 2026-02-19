@@ -1,10 +1,11 @@
 import {
   Fira_Code as FontMono,
-  Space_Grotesk as FontSans,
+  Quicksand as FontSans,
 } from "next/font/google";
 
 export const fontSans = FontSans({
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
   variable: "--font-sans",
 });
 

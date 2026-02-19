@@ -12,14 +12,19 @@ import {
   applySystemBackground,
   loadSystemSettings,
 } from "./system-settings";
+import { installApiConnectionGuard } from "@/lib/api-connection-guard";
 
 interface AppShellProps {
   children: React.ReactNode;
 }
 
+installApiConnectionGuard();
+
 export function AppShell({ children }: AppShellProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "";
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const isStandalonePage =
+    pathname.startsWith("/login") || pathname.startsWith("/api-connection-error");
 
   useEffect(() => {
     setIsSidebarOpen(false);
@@ -31,7 +36,7 @@ export function AppShell({ children }: AppShellProps) {
     applySystemFont(settings.font);
   }, []);
 
-  if (pathname.startsWith("/login")) {
+  if (isStandalonePage) {
     return <>{children}</>;
   }
 

@@ -25,16 +25,16 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := h.authService.Authenticate(r.Context(), payload.Login, payload.Password)
-	if err != nil {
-		switch {
-		case errors.Is(err, usecase.ErrInvalidInput):
-			h.respondError(w, http.StatusBadRequest, "login and password are required")
-		case errors.Is(err, usecase.ErrInvalidCredentials):
-			h.respondError(w, http.StatusUnauthorized, "invalid credentials")
-		default:
-			h.respondError(w, http.StatusInternalServerError, "unexpected error")
-		}
-		return
+		if err != nil {
+			switch {
+			case errors.Is(err, usecase.ErrInvalidInput):
+				h.respondError(w, http.StatusBadRequest, "login and password are required")
+			case errors.Is(err, usecase.ErrInvalidCredentials):
+				h.respondError(w, http.StatusUnauthorized, "credenciais inválidas")
+			default:
+				h.respondError(w, http.StatusInternalServerError, "unexpected error")
+			}
+			return
 	}
 
 	token, expiresAt, err := h.tokenManager.Generate(user.ID, user.Login, user.Name, time.Now())

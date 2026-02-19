@@ -4943,10 +4943,10 @@ export default function ProjetosPage() {
                     ) : null}
 
                     {!isLoadingTaskComments
-                      ? flattenedTaskComments.map((threadItem) => (
+                        ? flattenedTaskComments.map((threadItem) => (
                           <div
                             key={threadItem.comment.id}
-                            className="rounded-xl border border-default-200 bg-content1 p-3"
+                            className="rounded-xl border border-default-200 bg-content1 p-3 font-black"
                             style={{ marginLeft: `${Math.min(threadItem.depth, 6) * 20}px` }}
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4998,7 +4998,7 @@ export default function ProjetosPage() {
                 </div>
 
                 {replyTargetComment ? (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 font-black">
                     <p className="truncate text-xs text-foreground/80">
                       Respondendo comentário: {replyTargetComment.comment}
                     </p>

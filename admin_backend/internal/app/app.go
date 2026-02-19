@@ -57,6 +57,7 @@ func New() (*App, error) {
 	tokenManager := auth.NewTokenManager(auth.FromEnv())
 	zipCodeLookup := zipcode.NewViaCEPClient(8 * time.Second)
 	clientRepo := postgres.NewClientRepository(database)
+	clientPortalRepo := postgres.NewClientPortalRepository(database)
 	authRepo := postgres.NewAuthRepository(database)
 	authorizationRepo := postgres.NewAuthorizationRepository(database)
 	userProfileRepo := postgres.NewUserProfileRepository(database)
@@ -70,6 +71,7 @@ func New() (*App, error) {
 	userProfileService := usecase.NewUserProfileService(userProfileRepo)
 	securityService := usecase.NewSecurityService(securityRepo)
 	projectService := usecase.NewProjectService(projectRepo)
+	clientPortalService := usecase.NewClientPortalService(clientPortalRepo)
 	userHandler := apphttp.NewUserHandler(
 		userService,
 		clientService,
@@ -78,6 +80,7 @@ func New() (*App, error) {
 		userProfileService,
 		securityService,
 		projectService,
+		clientPortalService,
 		database,
 		tokenManager,
 	)

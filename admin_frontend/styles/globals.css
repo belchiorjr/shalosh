@@ -7,8 +7,33 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-    --font-sans: "font", sans-serif;
+    --font-sans: "Quicksand", sans-serif;
     --font-mono: "monospace", monospace;
+}
+
+body {
+    font-weight: 700;
+}
+
+button,
+[role="button"],
+[role="menuitem"] {
+    font-weight: 900 !important;
+}
+
+input,
+textarea,
+select,
+[data-slot="input"],
+[data-slot="input"] input,
+[data-slot="input-wrapper"] input,
+[data-slot="input-wrapper"] textarea {
+    font-weight: 800 !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+    font-weight: 700;
 }
 
 :root {
@@ -38,4 +63,10 @@
     font-feature-settings: "liga";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+button .material-symbols-rounded,
+[role="button"] .material-symbols-rounded,
+[role="menuitem"] .material-symbols-rounded {
+    color: currentColor !important;
 }

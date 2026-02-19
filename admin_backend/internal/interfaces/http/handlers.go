@@ -5,9 +5,11 @@ import (
 
 	"admin_backend/internal/infra/auth"
 	authhttp "admin_backend/internal/interfaces/http/auth"
+	clientportalhttp "admin_backend/internal/interfaces/http/clientportal"
 	clientshttp "admin_backend/internal/interfaces/http/clients"
 	projectshttp "admin_backend/internal/interfaces/http/projects"
 	securityhttp "admin_backend/internal/interfaces/http/security"
+	servicerequestshttp "admin_backend/internal/interfaces/http/servicerequests"
 	userprofileshttp "admin_backend/internal/interfaces/http/userprofiles"
 	usershttp "admin_backend/internal/interfaces/http/users"
 	"admin_backend/internal/usecase"
@@ -22,15 +24,18 @@ type UserHandler struct {
 	userProfileService   *usecase.UserProfileService
 	securityService      *usecase.SecurityService
 	projectService       *usecase.ProjectService
+	clientPortalService  *usecase.ClientPortalService
 	db                   *sqlx.DB
 	tokenManager         *auth.TokenManager
 
-	authHandler         *authhttp.Handler
-	usersHandler        *usershttp.Handler
-	userProfilesHandler *userprofileshttp.Handler
-	clientsHandler      *clientshttp.Handler
-	securityHandler     *securityhttp.Handler
-	projectsHandler     *projectshttp.Handler
+	authHandler            *authhttp.Handler
+	clientPortalHandler    *clientportalhttp.Handler
+	usersHandler           *usershttp.Handler
+	userProfilesHandler    *userprofileshttp.Handler
+	clientsHandler         *clientshttp.Handler
+	securityHandler        *securityhttp.Handler
+	projectsHandler        *projectshttp.Handler
+	serviceRequestsHandler *servicerequestshttp.Handler
 }
 
 func NewUserHandler(
@@ -41,6 +46,7 @@ func NewUserHandler(
 	userProfileService *usecase.UserProfileService,
 	securityService *usecase.SecurityService,
 	projectService *usecase.ProjectService,
+	clientPortalService *usecase.ClientPortalService,
 	db *sqlx.DB,
 	tokenManager *auth.TokenManager,
 ) *UserHandler {
@@ -52,6 +58,7 @@ func NewUserHandler(
 		userProfileService:   userProfileService,
 		securityService:      securityService,
 		projectService:       projectService,
+		clientPortalService:  clientPortalService,
 		db:                   db,
 		tokenManager:         tokenManager,
 	}
@@ -108,6 +115,22 @@ func NewUserHandler(
 		respondError,
 	)
 
+	handler.clientPortalHandler = clientportalhttp.NewHandler(
+		handler.clientPortalService,
+		handler.projectService,
+		handler.tokenManager,
+		normalizeAvatarInput,
+		respondJSON,
+		respondError,
+	)
+
+	handler.serviceRequestsHandler = servicerequestshttp.NewHandler(
+		handler.clientPortalService,
+		handler.authorizeRequest,
+		respondJSON,
+		respondError,
+	)
+
 	return handler
 }
 
@@ -132,6 +155,17 @@ func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/project-types/", h.projectsHandler.HandleProjectTypeByID)
 	mux.HandleFunc("/projects", h.projectsHandler.HandleProjects)
 	mux.HandleFunc("/projects/", h.projectsHandler.HandleProjectRoutes)
+	mux.HandleFunc("/client-auth/login", h.clientPortalHandler.HandleClientLogin)
+	mux.HandleFunc("/client-auth/register", h.clientPortalHandler.HandleClientRegister)
+	mux.HandleFunc("/client-auth/account", h.clientPortalHandler.HandleClientAccount)
+	mux.HandleFunc("/client/dashboard", h.clientPortalHandler.HandleClientDashboard)
+	mux.HandleFunc("/client/projects", h.clientPortalHandler.HandleClientProjects)
+	mux.HandleFunc("/client/projects/", h.clientPortalHandler.HandleClientProjectRoutes)
+	mux.HandleFunc("/client/payments", h.clientPortalHandler.HandleClientPayments)
+	mux.HandleFunc("/client/service-requests", h.clientPortalHandler.HandleClientServiceRequests)
+	mux.HandleFunc("/client/service-requests/", h.clientPortalHandler.HandleClientServiceRequests)
+	mux.HandleFunc("/service-requests", h.serviceRequestsHandler.HandleServiceRequests)
+	mux.HandleFunc("/service-requests/", h.serviceRequestsHandler.HandleServiceRequests)
 }
 
 func (h *UserHandler) handleHealth(w http.ResponseWriter, _ *http.Request) {

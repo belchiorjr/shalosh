@@ -84,6 +84,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_ADMIN_BACKEND_URL: ${ADMIN_BACKEND_URL:-http://localhost:8080}
     restart: unless-stopped
   postgres:
     image: postgres:16-alpine

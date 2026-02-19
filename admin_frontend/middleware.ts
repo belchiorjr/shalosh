@@ -8,6 +8,7 @@ export function middleware(request: NextRequest) {
 
   if (
     pathname.startsWith("/login") ||
+    pathname.startsWith("/api-connection-error") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     PUBLIC_FILE.test(pathname)

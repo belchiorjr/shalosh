@@ -4,13 +4,21 @@ import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 
 import { LogInIcon } from "@/components/icons";
 import { createLoginControllerDependencies } from "@/modules/auth/composition/create-login-controller-deps";
 import { useLoginController } from "@/modules/auth/presentation/use-login-controller";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-background" />}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const controllerDependencies = useMemo(
@@ -60,7 +68,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <Card className="w-full max-w-sm bg-content1/95 backdrop-blur-sm lg:w-1/2" shadow="sm">
+        <Card className="w-full max-w-sm bg-content1/95 backdrop-blur-sm lg:w-1/2" shadow="none">
           <CardHeader className="flex flex-col items-start gap-1">
             <h2 className="text-xl font-semibold text-foreground">Login</h2>
             <p className="text-sm text-foreground/70">
