@@ -34,6 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const currentYear = new Date().getFullYear();
+  const clientAreaUrl =
+    process.env.NEXT_PUBLIC_CLIENT_AREA_URL || "http://localhost:3000/login";
 
   return (
     <html suppressHydrationWarning lang="en">
@@ -62,6 +64,12 @@ export default function RootLayout({
                 </NextLink>
                 <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto sm:flex-nowrap sm:h-10">
                   <MainNav />
+                  <a
+                    href={clientAreaUrl}
+                    className="inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium leading-none transition-colors bg-foreground text-background hover:opacity-85"
+                  >
+                    Área do Cliente
+                  </a>
                   <ThemeSwitch className="text-foreground/80 hover:text-foreground" />
                 </div>
               </div>

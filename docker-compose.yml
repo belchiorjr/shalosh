@@ -3,6 +3,8 @@ services:
     build:
       context: ./site
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLIENT_AREA_URL: ${SITE_CLIENT_AREA_URL:-http://localhost:3000/login}
     image: shalosh-site:latest
     ports:
       - "3000:3000"
@@ -10,6 +12,7 @@ services:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PUBLIC_ADMIN_BACKEND_URL: ${ADMIN_BACKEND_URL:-http://localhost:8080}
+      NEXT_PUBLIC_CLIENT_AREA_URL: ${SITE_CLIENT_AREA_URL:-http://localhost:3000/login}
     restart: unless-stopped
   admin_backend:
     build:

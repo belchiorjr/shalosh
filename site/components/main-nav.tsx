@@ -4,12 +4,11 @@ import NextLink from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
-import { MailIcon } from "@/components/icons";
-
 const navLinks = [
   { href: "/about", label: "Sobre" },
   { href: "/services", label: "Serviços" },
   { href: "/cases", label: "Cases" },
+  { href: "/contato", label: "Contato" },
 ];
 
 export function MainNav() {
@@ -34,17 +33,6 @@ export function MainNav() {
           </NextLink>
         );
       })}
-      <NextLink
-        className={clsx(
-          "inline-flex items-center rounded-full px-4 py-1.5 text-sm font-medium leading-none transition-colors bg-[#FFC400] text-black hover:bg-[#ffd44d] dark:border dark:border-[#FFC400]/50 dark:bg-transparent dark:text-[#FFC400] dark:hover:bg-[#FFC400] dark:hover:text-black",
-          pathname === "/contato" &&
-            "ring-2 ring-[#FFC400]/70 ring-offset-2 ring-offset-background",
-        )}
-        href="/contato"
-      >
-        <MailIcon className="mr-2" size={16} />
-        Contato
-      </NextLink>
     </nav>
   );
 }

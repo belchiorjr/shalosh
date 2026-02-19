@@ -100,28 +100,42 @@ function LoginPageContent() {
   };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 p-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50 p-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        <img
+          src="/shalosh_logo.svg"
+          alt=""
+          className="absolute left-1/2 top-1/2 h-[34vh] w-auto -translate-x-1/2 -translate-y-1/2 opacity-10"
+        />
+      </div>
       <div className="absolute right-4 top-4 z-10 rounded-full border border-default-200 bg-content1/80 p-1 backdrop-blur">
         <ThemeSwitch />
       </div>
-      <Card className="w-full max-w-5xl overflow-hidden border border-default-200 bg-content1/90 backdrop-blur-md">
+      <Card className="relative z-10 w-full max-w-5xl overflow-hidden border border-default-200 bg-content1/90 backdrop-blur-md">
         <CardBody className="p-0">
           <div className="grid md:grid-cols-[1fr_420px]">
-            <div className="flex flex-col items-center justify-center gap-4 bg-black px-6 py-10">
-              <img
-                src="/shalosh_marca_h_white.svg"
-                alt="Shalosh"
-                className="h-[10.5rem] w-auto sm:h-48 md:h-60"
-              />
-              <p className="max-w-sm text-center text-xs leading-tight text-white/80">
+            <div className="flex flex-col items-center justify-center gap-4 bg-white/30 px-6 py-10 dark:bg-black">
+              <div className="relative w-56 sm:w-64 md:w-72">
+                <img
+                  src="/shalosh_marca_x.svg"
+                  alt="Shalosh"
+                  className="h-auto w-full dark:hidden"
+                />
+                <img
+                  src="/shalosh_marca_x_dark.svg"
+                  alt="Shalosh"
+                  className="hidden h-auto w-full dark:block"
+                />
+              </div>
+              <p className="max-w-sm text-center text-xs leading-tight text-foreground/70 dark:text-white/80">
                 Soluções digitais para acompanhar seus projetos
                 <br />
                 de ponta a ponta.
               </p>
             </div>
 
-            <div className="p-6">
-              <div className="space-y-4">
+            <div className="flex flex-col justify-center p-6 md:min-h-[560px]">
+              <div className="w-full space-y-4">
                 <header className="space-y-1 text-center">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
                     Portal do Cliente
