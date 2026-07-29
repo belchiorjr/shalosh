@@ -24,7 +24,10 @@ export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname() || "";
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const isStandalonePage =
-    pathname.startsWith("/login") || pathname.startsWith("/api-connection-error");
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
+    pathname.startsWith("/api-connection-error");
 
   useEffect(() => {
     setIsSidebarOpen(false);

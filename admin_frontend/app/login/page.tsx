@@ -3,6 +3,7 @@
 import { Button } from "@heroui/button";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Input } from "@heroui/input";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 
@@ -105,6 +106,13 @@ function LoginPageContent() {
               >
                 Entrar
               </Button>
+
+              <Link
+                href="/forgot-password"
+                className="block text-center text-sm text-foreground/70 hover:text-foreground"
+              >
+                Esqueci minha senha
+              </Link>
             </form>
           </CardBody>
         </Card>

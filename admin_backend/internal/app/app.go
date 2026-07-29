@@ -10,6 +10,7 @@ import (
 	"admin_backend/internal/infra/db"
 	"admin_backend/internal/infra/id"
 	"admin_backend/internal/infra/localstack"
+	"admin_backend/internal/infra/mailer"
 	"admin_backend/internal/infra/repository/memory"
 	"admin_backend/internal/infra/repository/postgres"
 	"admin_backend/internal/infra/zipcode"
@@ -63,6 +64,9 @@ func New() (*App, error) {
 	userProfileRepo := postgres.NewUserProfileRepository(database)
 	securityRepo := postgres.NewSecurityRepository(database)
 	projectRepo := postgres.NewProjectRepository(database)
+	emailSettingsRepo := postgres.NewEmailSettingsRepository(database)
+	passwordResetRepo := postgres.NewPasswordResetRepository(database)
+	turboSMTPMailer := mailer.NewTurboSMTPClient(15 * time.Second)
 
 	userService := usecase.NewUserService(userRepo, ids, clockProvider)
 	clientService := usecase.NewClientService(clientRepo, zipCodeLookup)
@@ -72,6 +76,12 @@ func New() (*App, error) {
 	securityService := usecase.NewSecurityService(securityRepo)
 	projectService := usecase.NewProjectService(projectRepo)
 	clientPortalService := usecase.NewClientPortalService(clientPortalRepo)
+	emailSettingsService := usecase.NewEmailSettingsService(emailSettingsRepo, turboSMTPMailer)
+	passwordResetService := usecase.NewPasswordResetService(
+		passwordResetRepo,
+		emailSettingsRepo,
+		turboSMTPMailer,
+	)
 	userHandler := apphttp.NewUserHandler(
 		userService,
 		clientService,
@@ -81,6 +91,8 @@ func New() (*App, error) {
 		securityService,
 		projectService,
 		clientPortalService,
+		emailSettingsService,
+		passwordResetService,
 		database,
 		tokenManager,
 	)

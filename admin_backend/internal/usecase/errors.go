@@ -29,6 +29,12 @@ var (
 	ErrProjectClientsNotFound  = errors.New("one or more project clients do not exist")
 	ErrProjectManagersNotFound = errors.New("one or more project managers do not exist")
 
+	ErrEmailNotConfigured = errors.New("email settings not configured")
+	ErrEmailSendFailed    = errors.New("email send failed")
+
+	ErrResetTokenInvalid = errors.New("password reset token is invalid")
+	ErrResetTokenExpired = errors.New("password reset token is expired")
+
 	ErrZipCodeUnavailable = errors.New("zipcode service unavailable")
 	ErrZipCodeNotFound    = errors.New("zipcode not found")
 )

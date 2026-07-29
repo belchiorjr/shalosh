@@ -35,7 +35,7 @@ export default function RootLayout({
 }) {
   const currentYear = new Date().getFullYear();
   const clientAreaUrl =
-    process.env.NEXT_PUBLIC_CLIENT_AREA_URL || "http://localhost:3000/login";
+    process.env.NEXT_PUBLIC_CLIENT_AREA_URL || "http://localhost:3002/login";
 
   return (
     <html suppressHydrationWarning lang="en">

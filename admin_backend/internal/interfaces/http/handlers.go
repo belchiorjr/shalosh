@@ -7,6 +7,8 @@ import (
 	authhttp "admin_backend/internal/interfaces/http/auth"
 	clientportalhttp "admin_backend/internal/interfaces/http/clientportal"
 	clientshttp "admin_backend/internal/interfaces/http/clients"
+	emailsettingshttp "admin_backend/internal/interfaces/http/emailsettings"
+	passwordresethttp "admin_backend/internal/interfaces/http/passwordreset"
 	projectshttp "admin_backend/internal/interfaces/http/projects"
 	securityhttp "admin_backend/internal/interfaces/http/security"
 	servicerequestshttp "admin_backend/internal/interfaces/http/servicerequests"
@@ -25,10 +27,14 @@ type UserHandler struct {
 	securityService      *usecase.SecurityService
 	projectService       *usecase.ProjectService
 	clientPortalService  *usecase.ClientPortalService
+	emailSettingsService *usecase.EmailSettingsService
+	passwordResetService *usecase.PasswordResetService
 	db                   *sqlx.DB
 	tokenManager         *auth.TokenManager
 
 	authHandler            *authhttp.Handler
+	emailSettingsHandler   *emailsettingshttp.Handler
+	passwordResetHandler   *passwordresethttp.Handler
 	clientPortalHandler    *clientportalhttp.Handler
 	usersHandler           *usershttp.Handler
 	userProfilesHandler    *userprofileshttp.Handler
@@ -47,6 +53,8 @@ func NewUserHandler(
 	securityService *usecase.SecurityService,
 	projectService *usecase.ProjectService,
 	clientPortalService *usecase.ClientPortalService,
+	emailSettingsService *usecase.EmailSettingsService,
+	passwordResetService *usecase.PasswordResetService,
 	db *sqlx.DB,
 	tokenManager *auth.TokenManager,
 ) *UserHandler {
@@ -59,9 +67,25 @@ func NewUserHandler(
 		securityService:      securityService,
 		projectService:       projectService,
 		clientPortalService:  clientPortalService,
+		emailSettingsService: emailSettingsService,
+		passwordResetService: passwordResetService,
 		db:                   db,
 		tokenManager:         tokenManager,
 	}
+
+	handler.emailSettingsHandler = emailsettingshttp.NewHandler(
+		handler.emailSettingsService,
+		handler.authorizeRequest,
+		handler.hasUserPermission,
+		respondJSON,
+		respondError,
+	)
+
+	handler.passwordResetHandler = passwordresethttp.NewHandler(
+		handler.passwordResetService,
+		respondJSON,
+		respondError,
+	)
 
 	handler.userProfilesHandler = userprofileshttp.NewHandler(
 		handler.userProfileService,
@@ -138,6 +162,10 @@ func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/auth/login", h.authHandler.HandleLogin)
 	mux.HandleFunc("/auth/account", h.authHandler.HandleAccount)
+	mux.HandleFunc("/auth/forgot-password", h.passwordResetHandler.HandleAdminForgotPassword)
+	mux.HandleFunc("/auth/reset-password", h.passwordResetHandler.HandleAdminResetPassword)
+	mux.HandleFunc("/settings/email", h.emailSettingsHandler.HandleEmailSettings)
+	mux.HandleFunc("/settings/email/test", h.emailSettingsHandler.HandleEmailSettingsTest)
 	mux.HandleFunc("/auth/me/profiles", h.userProfilesHandler.HandleAuthMyProfiles)
 	mux.HandleFunc("/users", h.usersHandler.HandleUsers)
 	mux.HandleFunc("/users/active", h.usersHandler.HandleActiveUsers)
@@ -158,6 +186,8 @@ func (h *UserHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/client-auth/login", h.clientPortalHandler.HandleClientLogin)
 	mux.HandleFunc("/client-auth/register", h.clientPortalHandler.HandleClientRegister)
 	mux.HandleFunc("/client-auth/account", h.clientPortalHandler.HandleClientAccount)
+	mux.HandleFunc("/client-auth/forgot-password", h.passwordResetHandler.HandleClientForgotPassword)
+	mux.HandleFunc("/client-auth/reset-password", h.passwordResetHandler.HandleClientResetPassword)
 	mux.HandleFunc("/client/dashboard", h.clientPortalHandler.HandleClientDashboard)
 	mux.HandleFunc("/client/projects", h.clientPortalHandler.HandleClientProjects)
 	mux.HandleFunc("/client/projects/", h.clientPortalHandler.HandleClientProjectRoutes)
